@@ -11,6 +11,7 @@ import json
 import re
 import base64
 import hashlib
+import unicodedata
 from pathlib import Path
 from datetime import datetime
 from collections import Counter
@@ -1088,19 +1089,31 @@ class EmojiDialog(QDialog):
         for cat, emojis in EMOJI_LIST.items():
             w = QWidget()
             grid = QGridLayout(w)
+            grid.setContentsMargins(8, 8, 8, 8)
+            grid.setSpacing(8)
             for i, e in enumerate(emojis):
                 btn = QPushButton(e)
-                btn.setFixedSize(36, 36)
-                btn.setFont(QFont("", 16))
+                btn.setFixedSize(44, 44)
+                btn.setFont(QFont("", 20))
+                name = unicodedata.name(e, "").title()
+                tooltip = name if name else cat
+                btn.setToolTip(f"{e} {tooltip}")
+                btn.setProperty("emoji_name", name.lower())
+                btn.setProperty("emoji_category", cat.lower())
                 btn.clicked.connect(lambda _, em=e: self.select(em))
                 grid.addWidget(btn, i // 8, i % 8)
-                self.emoji_buttons.append((btn, e))
+                self.emoji_buttons.append(btn)
             tabs.addTab(w, cat)
         layout.addWidget(tabs)
-    
+
     def filter_emoji(self, text):
-        # 간단한 필터 (실제로는 이모지 이름 검색 필요)
-        pass
+        query = text.strip().lower()
+        for btn in self.emoji_buttons:
+            name = btn.property("emoji_name") or ""
+            category = btn.property("emoji_category") or ""
+            emoji = btn.text()
+            visible = not query or query in emoji or query in name or query in category
+            btn.setVisible(visible)
     
     def select(self, emoji):
         self.emoji_selected.emit(emoji)

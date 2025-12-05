@@ -778,6 +778,19 @@ AUTOCOMPLETE_ITEMS = [
 ]
 
 # 이모지
+def emoji_display_name(emoji: str) -> str:
+    """Return a readable name for a (possibly multi-codepoint) emoji."""
+    parts = []
+    for ch in emoji:
+        try:
+            name = unicodedata.name(ch)
+        except ValueError:
+            name = ""
+        if name and "VARIATION SELECTOR" not in name:
+            parts.append(name)
+    return " ".join(parts).title()
+
+
 EMOJI_LIST = {
     "표정": ["😀", "😃", "😄", "😁", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😍", "🥰", "😎", "🤔", "😴"],
     "제스처": ["👍", "👎", "👌", "✌️", "🤞", "🤝", "👏", "🙌", "💪", "🙏", "👋", "✋", "🤚", "🖐️", "👆", "👇"],
@@ -1093,9 +1106,10 @@ class EmojiDialog(QDialog):
             grid.setSpacing(8)
             for i, e in enumerate(emojis):
                 btn = QPushButton(e)
-                btn.setFixedSize(44, 44)
-                btn.setFont(QFont("", 20))
-                name = unicodedata.name(e, "").title()
+                btn.setFixedSize(56, 56)
+                btn.setFont(QFont("", 28))
+                btn.setStyleSheet("padding: 6px 4px;")
+                name = emoji_display_name(e)
                 tooltip = name if name else cat
                 btn.setToolTip(f"{e} {tooltip}")
                 btn.setProperty("emoji_name", name.lower())

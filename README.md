@@ -189,7 +189,7 @@ markdown-editor/
 
 - **Python**: 3.9+
 - **PyQt6**: 6.4+
-- **PyQt6-WebEngine**: Mermaid 렌더링
+- **PyQt6-WebEngine**: Mermaid 렌더링 (QtWebChannel은 PyQt6에 포함)
 - **markdown**: 마크다운 변환
 - **Pillow**: 아이콘 생성 (빌드용)
 
@@ -211,7 +211,7 @@ xattr -cr /Applications/MarkdownPro.app
 sudo apt install python3-pyqt6.qtwebengine
 
 # pip
-pip install PyQt6-WebEngine PyQt6-WebChannel
+pip install PyQt6-WebEngine
 ```
 
 ## 📄 라이선스

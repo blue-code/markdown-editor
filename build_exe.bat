@@ -8,11 +8,11 @@ pip install --upgrade pip
 pip install -r requirements.txt
 pip install pyinstaller
 
-pyinstaller --noconfirm --windowed --name MarkdownPro markdown_editor.py
+pyinstaller --noconfirm --windowed --name "Nebula Note" --icon "icon.ico" --splash "splash.png" --add-data "icon.ico;." markdown_editor.py
 
-if exist dist\MarkdownPro\MarkdownPro.exe (
+if exist "dist\Nebula Note\Nebula Note.exe" (
     echo.
-    echo 빌드 완료! 결과: dist\MarkdownPro\MarkdownPro.exe
+    echo 빌드 완료! 결과: dist\Nebula Note\Nebula Note.exe
 ) else (
     echo.
     echo 빌드에 실패했습니다. 위 로그를 확인하세요.

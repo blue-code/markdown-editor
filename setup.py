@@ -6,15 +6,15 @@ py2app 설정 파일 - MarkdownPro macOS 앱 빌드
 from setuptools import setup
 
 APP = ['markdown_editor.py']
-DATA_FILES = []
+DATA_FILES = ['icon.ico']
 
 OPTIONS = {
     'argv_emulation': False,
     'iconfile': 'icon.icns',
     'plist': {
-        'CFBundleName': 'MarkdownPro',
-        'CFBundleDisplayName': 'MarkdownPro',
-        'CFBundleIdentifier': 'com.markdownpro.app',
+        'CFBundleName': 'Nebula Note',
+        'CFBundleDisplayName': 'Nebula Note',
+        'CFBundleIdentifier': 'com.nebulanote.app',
         'CFBundleVersion': '3.0.0',
         'CFBundleShortVersionString': '3.0.0',
         'LSMinimumSystemVersion': '10.15',
@@ -63,11 +63,11 @@ OPTIONS = {
         'markdown.extensions.sane_lists',
     ],
     'excludes': ['tkinter', 'test'],
-    'resources': [],
+    'resources': ['icon.ico'],
 }
 
 setup(
-    name='MarkdownPro',
+    name='Nebula Note',
     app=APP,
     data_files=DATA_FILES,
     options={'py2app': OPTIONS},

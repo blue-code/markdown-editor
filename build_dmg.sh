@@ -6,13 +6,13 @@
 
 set -e
 
-APP_NAME="MarkdownPro"
+APP_NAME="Nebula Note"
 VERSION="3.0.0"
 DMG_NAME="${APP_NAME}-${VERSION}"
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║        MarkdownPro v${VERSION} DMG 빌드 시작                  ║"
+echo "║        Nebula Note v${VERSION} DMG 빌드 시작                  ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -42,51 +42,58 @@ if [ ! -f "icon.icns" ]; then
     # iconset 디렉토리 생성
     mkdir -p icon.iconset
     
-    # Python으로 간단한 아이콘 이미지 생성
+    # Python으로 아이콘 이미지 생성 (splash.png 사용)
     python3 << 'ICONGEN'
 import os
 try:
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image
+    
+    # 소스 이미지 (splash.png가 있으면 사용, 없으면 생성)
+    source_img = "splash.png"
+    if not os.path.exists(source_img):
+        print(f"Warning: {source_img} not found. Generating default icon.")
+        from PIL import ImageDraw, ImageFont
+        img = Image.new('RGBA', (1024, 1024), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([100, 100, 924, 924], radius=200, fill='#007AFF')
+        # 텍스트
+        try:
+            font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', 400)
+        except:
+            font = ImageFont.load_default()
+        text = "N"
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        draw.text(((1024-w)/2, (1024-h)/2 - 100), text, fill='white', font=font)
+        img.save(source_img)
+    
+    # 아이콘 리사이징
+    img = Image.open(source_img)
+    
+    # 정사각형으로 크롭 (중앙 기준)
+    w, h = img.size
+    size = min(w, h)
+    left = (w - size) / 2
+    top = (h - size) / 2
+    right = (w + size) / 2
+    bottom = (h + size) / 2
+    img = img.crop((left, top, right, bottom))
     
     sizes = [16, 32, 64, 128, 256, 512, 1024]
     
     for size in sizes:
-        img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
+        resized = img.resize((size, size), Image.Resampling.LANCZOS)
+        resized.save(f'icon.iconset/icon_{size}x{size}.png')
         
-        # 배경 (둥근 사각형)
-        margin = size // 8
-        draw.rounded_rectangle(
-            [margin, margin, size - margin, size - margin],
-            radius=size // 5,
-            fill='#007AFF'
-        )
-        
-        # 텍스트
-        try:
-            font_size = size // 3
-            font = ImageFont.truetype('/System/Library/Fonts/Helvetica.ttc', font_size)
-        except:
-            font = ImageFont.load_default()
-        
-        text = "MD"
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        x = (size - text_width) // 2
-        y = (size - text_height) // 2 - size // 10
-        draw.text((x, y), text, fill='white', font=font)
-        
-        # 저장
-        img.save(f'icon.iconset/icon_{size}x{size}.png')
         if size <= 512:
-            img_2x = img.resize((size * 2, size * 2), Image.Resampling.LANCZOS)
-            img_2x.save(f'icon.iconset/icon_{size}x{size}@2x.png')
+            resized_2x = img.resize((size * 2, size * 2), Image.Resampling.LANCZOS)
+            resized_2x.save(f'icon.iconset/icon_{size}x{size}@2x.png')
     
     print("PNG 아이콘 생성 완료")
-except ImportError:
-    print("Pillow가 없어 기본 아이콘 사용")
-    # 빈 iconset 생성
+except Exception as e:
+    print(f"Error creating icons: {e}")
+    # 빈 iconset 생성 (에러 방지)
     for size in [16, 32, 128, 256, 512]:
         open(f'icon.iconset/icon_{size}x{size}.png', 'w').close()
 ICONGEN
@@ -127,17 +134,17 @@ ln -sf /Applications "$DMG_DIR/Applications"
 # README 생성
 cat > "$DMG_DIR/README.txt" << 'README'
 ===============================================
-   MarkdownPro v3.0 설치 방법
+   Nebula Note v3.0 설치 방법
 ===============================================
 
-1. MarkdownPro.app을 Applications 폴더로 드래그하세요
+1. Nebula Note.app을 Applications 폴더로 드래그하세요
 
 2. 처음 실행 시 보안 경고가 나타나면:
    - 시스템 설정 > 개인 정보 보호 및 보안
    - "확인 없이 열기" 클릭
    
    또는 터미널에서:
-   xattr -cr /Applications/MarkdownPro.app
+   xattr -cr /Applications/Nebula Note.app
 
 ===============================================
    주요 기능

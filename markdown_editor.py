@@ -1899,7 +1899,7 @@ class MarkdownEditor(QMainWindow):
             pass
     
     def setup_ui(self):
-        self.setWindowTitle("MarkdownPro")
+        self.setWindowTitle("Nebula Note")
         self.setMinimumSize(1300, 850)
         
         central = QWidget()
@@ -2325,7 +2325,7 @@ class MarkdownEditor(QMainWindow):
         QTimer.singleShot(350, self.update_preview)
     
     def update_title(self):
-        title = "MarkdownPro"
+        title = "Nebula Note"
         if self.current_file:
             title = f"{os.path.basename(self.current_file)} - {title}"
         if self.is_modified:
@@ -2751,18 +2751,240 @@ input[type="checkbox"] {{ margin-right: 8px; }}
         if not self.check_save():
             event.ignore()
             return
+        if selected:
+            cursor.insertText(f"{wrapper}{selected}{wrapper}")
+        else:
+            cursor.insertText(f"{wrapper}{wrapper}")
+            cursor.movePosition(QTextCursor.MoveOperation.Left, n=len(wrapper))
+            self.editor.setTextCursor(cursor)
+        self.editor.setFocus()
+    
+    def insert_completion(self, text):
+        self.editor.textCursor().insertText(text)
+    
+    def insert_template(self, content):
+        if self.check_save():
+            self.editor.setPlainText(content)
+            self.current_file = None
+            self.is_modified = True
+            self.update_title()
+    
+    def insert_table(self):
+        dlg = TableDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.insert_at_cursor(dlg.get_markdown())
+    
+    def insert_link(self):
+        cursor = self.editor.textCursor()
+        dlg = LinkDialog(self, cursor.selectedText())
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            if cursor.hasSelection():
+                cursor.insertText(dlg.get_markdown())
+            else:
+                self.insert_text(dlg.get_markdown())
+    
+    def insert_image(self):
+        dlg = ImageDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.insert_text(dlg.get_markdown())
+    
+    def insert_emoji(self):
+        dlg = EmojiDialog(self)
+        dlg.emoji_selected.connect(self.insert_text)
+        dlg.exec()
+    
+    def show_find_dialog(self):
+        dlg = FindReplaceDialog(self.editor, self)
+        dlg.show()
+    
+    def manage_snippets(self):
+        dlg = SnippetDialog(self.snippets, self)
+        dlg.exec()
+        self.save_snippets()
+    
+    # ===== 도구 =====
+    def set_word_goal(self):
+        goal, ok = QInputDialog.getInt(self, "단어 목표", "목표 단어 수 (0=비활성화):", 
+                                        self.word_goal, 0, 100000, 100)
+        if ok:
+            self.word_goal = goal
+            self.update_stats()
+            self.save_settings()
+    
+    def format_tables(self):
+        text = self.editor.toPlainText()
+        # 간단한 테이블 정렬 (실제로는 더 복잡한 로직 필요)
+        lines = text.split('\n')
+        # 구현 생략...
+        self.status_bar.showMessage("표 정렬 완료", 2000)
+    
+    def sort_selected_lines(self):
+        cursor = self.editor.textCursor()
+        if cursor.hasSelection():
+            selected = cursor.selectedText()
+            lines = selected.split('\u2029')  # QTextEdit의 줄바꿈
+            lines.sort()
+            cursor.insertText('\n'.join(lines))
+    
+    def remove_empty_lines(self):
+        text = self.editor.toPlainText()
+        lines = [l for l in text.split('\n') if l.strip()]
+        self.editor.setPlainText('\n'.join(lines))
+    
+    def show_stats(self):
+        stats = DocumentStats.calculate(self.editor.toPlainText())
+        dlg = StatsDialog(stats, self)
+        dlg.exec()
+    
+    # ===== Mermaid =====
+    def open_mermaid_viewer(self):
+        text = self.editor.toPlainText()
+        pattern = r'```mermaid\n([\s\S]*?)```'
+        matches = re.findall(pattern, text)
+        
+        code = matches[0].strip() if matches else "flowchart TD\n    A[시작] --> B[끝]"
+        
+        if self.mermaid_viewer is None or not self.mermaid_viewer.isVisible():
+            self.mermaid_viewer = MermaidViewer(code, self.dark_mode, self)
+            self.mermaid_viewer.show()
+        else:
+            self.mermaid_viewer.update_mermaid(code)
+            self.mermaid_viewer.raise_()
+            self.mermaid_viewer.activateWindow()
+    
+    # ===== 보기 =====
+    def toggle_preview(self):
+        sizes = self.splitter.sizes()
+        if sizes[1] > 0:
+            self._preview_size = sizes[1]
+            self.splitter.setSizes([sizes[0] + sizes[1], 0])
+        else:
+            self.splitter.setSizes([sizes[0] - self._preview_size, self._preview_size])
+    
+    def toggle_sidebar(self):
+        self.side_panel.setVisible(not self.side_panel.isVisible())
+    
+    def toggle_focus_mode(self):
+        self.focus_mode = not self.focus_mode
+        self.focus_act.setChecked(self.focus_mode)
+        
+        if self.focus_mode:
+            self.side_panel.hide()
+            self.splitter.widget(1).hide()  # 미리보기 숨김
+            self.menuBar().hide()
+            self.statusBar().hide()
+            self.findChild(QToolBar).hide()
+            
+            style = FOCUS_STYLE_DARK if self.dark_mode else FOCUS_STYLE_LIGHT
+            self.setStyleSheet(style)
+            self.showFullScreen()
+        else:
+            self.exit_focus_mode()
+    
+    def exit_focus_mode(self):
+        if self.focus_mode:
+            self.focus_mode = False
+            self.focus_act.setChecked(False)
+            
+            self.side_panel.show()
+            self.splitter.widget(1).show()
+            self.menuBar().show()
+            self.statusBar().show()
+            self.findChild(QToolBar).show()
+            
+            self.setStyleSheet(self._normal_style)
+            self.showNormal()
+    
+    def toggle_dark_mode(self):
+        self.dark_mode = not self.dark_mode
+        self.dark_act.setChecked(self.dark_mode)
+        self.apply_theme()
+        self.save_settings()
+        
+        if self.mermaid_viewer and self.mermaid_viewer.isVisible():
+            self.mermaid_viewer.dark_mode = self.dark_mode
+            self.mermaid_viewer.setStyleSheet(DARK_STYLE if self.dark_mode else LIGHT_STYLE)
+            self.mermaid_viewer.render_mermaid()
+    
+    # ===== 도움말 =====
+    def show_about(self):
+        QMessageBox.about(self, "MarkdownPro", 
+            f"<h2>MarkdownPro v3.0</h2>"
+            f"<p>프로페셔널 마크다운 에디터</p>"
+            f"<hr>"
+            f"<p><b>주요 기능:</b></p>"
+            f"<ul>"
+            f"<li>실시간 미리보기</li>"
+            f"<li>Mermaid 다이어그램 {len(MERMAID_EXAMPLES)}종 지원</li>"
+            f"<li>포커스 모드</li>"
+            f"<li>문서 개요 & 통계</li>"
+            f"<li>스니펫 관리</li>"
+            f"<li>다크 모드</li>"
+            f"</ul>")
+    
+    def show_shortcuts(self):
+        QMessageBox.information(self, "단축키", """
+<h3>단축키 안내</h3>
+<table>
+<tr><td><b>Ctrl+N</b></td><td>새 문서</td></tr>
+<tr><td><b>Ctrl+O</b></td><td>열기</td></tr>
+<tr><td><b>Ctrl+S</b></td><td>저장</td></tr>
+<tr><td><b>Ctrl+F</b></td><td>찾기/바꾸기</td></tr>
+<tr><td><b>Ctrl+1/2/3/4</b></td><td>제목 1/2/3/4</td></tr>
+<tr><td><b>Ctrl+B</b></td><td>굵게</td></tr>
+<tr><td><b>Ctrl+I</b></td><td>기울임</td></tr>
+<tr><td><b>Ctrl+K</b></td><td>링크</td></tr>
+<tr><td><b>Ctrl+M</b></td><td>Mermaid 뷰어</td></tr>
+<tr><td><b>Ctrl+D</b></td><td>날짜 삽입</td></tr>
+<tr><td><b>F11</b></td><td>포커스 모드</td></tr>
+<tr><td><b>Tab</b></td><td>스니펫 확장</td></tr>
+<tr><td><b>Esc</b></td><td>포커스 모드 종료</td></tr>
+</table>
+""")
+    
+    def closeEvent(self, event):
+        if not self.check_save():
+            event.ignore()
+            return
         self.save_settings()
         self.save_snippets()
         event.accept()
 
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 def main():
+    # Windows Taskbar Icon Fix
+    if sys.platform == 'win32':
+        import ctypes
+        myappid = 'nebulanote.editor.v1' # arbitrary string
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
     app = QApplication(sys.argv)
-    app.setApplicationName("MarkdownPro")
-    app.setOrganizationName("MarkdownPro")
+    app.setApplicationName("Nebula Note")
+    app.setOrganizationName("Nebula Note")
+    
+    # Set Window Icon
+    from PyQt6.QtGui import QIcon
+    app.setWindowIcon(QIcon(resource_path("icon.ico")))
     
     window = MarkdownEditor()
     window.show()
+
+    # Close splash screen if it exists
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except ImportError:
+        pass
     
     sys.exit(app.exec())
 

@@ -72,6 +72,23 @@ pip install -r requirements.txt
 python markdown_editor.py
 ```
 
+### Windows EXE 빌드
+
+```powershell
+# 의존성 설치
+python -m venv venv
+.\venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install pyinstaller
+
+# 실행 파일 빌드 (dist/MarkdownPro/MarkdownPro.exe 생성)
+pyinstaller --noconfirm --windowed --name MarkdownPro markdown_editor.py
+
+# 또는 스크립트로 한 번에 실행
+build_exe.bat
+```
+
 ### macOS DMG 빌드
 
 ```bash

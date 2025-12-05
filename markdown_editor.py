@@ -1860,6 +1860,9 @@ class MarkdownEditor(QMainWindow):
         self.apply_theme()
         self.update_title()
         self.update_preview()
+        
+        # 초기화 과정에서 발생했을 수 있는 변경 상태 리셋
+        self.is_modified = False
     
     def load_settings(self):
         try:
@@ -2985,6 +2988,18 @@ def main():
         pyi_splash.close()
     except ImportError:
         pass
+
+    # Check for command line arguments (file to open)
+    if len(sys.argv) > 1:
+        file_path = sys.argv[1]
+        if os.path.exists(file_path):
+            def open_initial():
+                # 초기 파일 열기 시 저장 프롬프트 방지
+                window.is_modified = False
+                window.open_file(file_path)
+            
+            # Use QTimer to open file after the window is shown and event loop starts
+            QTimer.singleShot(100, open_initial)
     
     sys.exit(app.exec())
 

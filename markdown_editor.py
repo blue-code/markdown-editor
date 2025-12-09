@@ -23,14 +23,15 @@ from PyQt6.QtWidgets import (
     QComboBox, QSpinBox, QLineEdit, QListWidget, QListWidgetItem,
     QTabWidget, QGridLayout, QFrame, QScrollArea, QMenu,
     QMenuBar, QCompleter, QDialogButtonBox, QGroupBox, QCheckBox,
-    QSlider, QTreeWidget, QTreeWidgetItem, QProgressBar, QTextBrowser
+    QSlider, QTreeWidget, QTreeWidgetItem, QProgressBar, QTextBrowser,
+    QTreeView, QHeaderView, QStyle
 )
 from PyQt6.QtCore import (
-    Qt, QTimer, QSize, QUrl, pyqtSignal, QRegularExpression, QObject, pyqtSlot
+    Qt, QTimer, QSize, QUrl, pyqtSignal, QRegularExpression, QObject, pyqtSlot, QDir
 )
 from PyQt6.QtGui import (
     QFont, QAction, QKeySequence, QTextCharFormat, QSyntaxHighlighter,
-    QColor, QTextCursor, QShortcut, QTextDocument
+    QColor, QTextCursor, QShortcut, QTextDocument, QFileSystemModel
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebChannel import QWebChannel
@@ -1787,6 +1788,91 @@ class MermaidPanel(QWidget):
             self.template_selected.emit(MERMAID_EXAMPLES.get(item.text(), ""))
 
 
+class FileExplorerPanel(QWidget):
+    file_clicked = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Toolbar for Folder Selection
+        tool_layout = QHBoxLayout()
+        tool_layout.setContentsMargins(5, 5, 5, 0)
+        
+        self.path_label = QLabel("탐색기")
+        self.path_label.setStyleSheet("font-weight: bold; color: #666;")
+        tool_layout.addWidget(self.path_label)
+        
+        tool_layout.addStretch()
+        
+        # 버튼 스타일 (투명 배경, 아이콘만 표시)
+        btn_style = """
+            QPushButton { background-color: transparent; border: none; padding: 4px; }
+            QPushButton:hover { background-color: rgba(0, 0, 0, 0.1); border-radius: 4px; }
+        """
+        
+        open_btn = QPushButton()
+        open_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+        open_btn.setFixedSize(30, 30)
+        open_btn.setToolTip("폴더 열기")
+        open_btn.setStyleSheet(btn_style)
+        open_btn.clicked.connect(self.open_directory)
+        tool_layout.addWidget(open_btn)
+        
+        refresh_btn = QPushButton()
+        refresh_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
+        refresh_btn.setFixedSize(30, 30)
+        refresh_btn.setToolTip("새로고침")
+        refresh_btn.setStyleSheet(btn_style)
+        refresh_btn.clicked.connect(self.refresh)
+        tool_layout.addWidget(refresh_btn)
+        
+        layout.addLayout(tool_layout)
+
+        # File System Model
+        self.model = QFileSystemModel()
+        self.model.setRootPath(os.getcwd())
+        self.model.setFilter(QDir.Filter.NoDotAndDotDot | QDir.Filter.AllDirs | QDir.Filter.Files)
+        self.model.setNameFilters(["*.md", "*.markdown", "*.txt", "*.py", "*.js", "*.html", "*.css", "*.json", "*.xml", "*.yaml", "*.yml"])
+        self.model.setNameFilterDisables(False)
+        
+        # Tree View
+        self.tree = QTreeView()
+        self.tree.setModel(self.model)
+        self.tree.setRootIndex(self.model.index(os.getcwd()))
+        self.tree.setAnimated(True)
+        self.tree.setIndentation(20)
+        self.tree.setSortingEnabled(True)
+        self.tree.setColumnHidden(1, True) # Size
+        self.tree.setColumnHidden(2, True) # Type
+        self.tree.setColumnHidden(3, True) # Date
+        self.tree.setHeaderHidden(True)
+        
+        self.tree.doubleClicked.connect(self.on_double_click)
+        
+        layout.addWidget(self.tree)
+
+    def open_directory(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "폴더 열기", os.getcwd())
+        if dir_path:
+            self.set_root_path(dir_path)
+
+    def set_root_path(self, path):
+        self.model.setRootPath(path)
+        self.tree.setRootIndex(self.model.index(path))
+        self.path_label.setText(os.path.basename(path) or path)
+
+    def refresh(self):
+        # Refresh logic if needed, model usually updates automatically
+        pass
+
+    def on_double_click(self, index):
+        file_path = self.model.filePath(index)
+        if os.path.isfile(file_path):
+            self.file_clicked.emit(file_path)
+
+
 class CheatSheetPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1842,6 +1928,7 @@ class MarkdownEditor(QMainWindow):
         self.is_modified = False
         self.dark_mode = False
         self.focus_mode = False
+        self.custom_css_path = ""
         self.recent_files = []
         self.mermaid_viewer = None
         self.snippets = DEFAULT_SNIPPETS.copy()
@@ -1872,6 +1959,7 @@ class MarkdownEditor(QMainWindow):
                     self.dark_mode = cfg.get('dark_mode', False)
                     self.recent_files = cfg.get('recent_files', [])
                     self.word_goal = cfg.get('word_goal', 0)
+                    self.custom_css_path = cfg.get('custom_css_path', "")
         except:
             pass
     
@@ -1882,6 +1970,7 @@ class MarkdownEditor(QMainWindow):
                     'dark_mode': self.dark_mode,
                     'recent_files': self.recent_files[:10],
                     'word_goal': self.word_goal,
+                    'custom_css_path': self.custom_css_path,
                 }, f)
         except:
             pass
@@ -1915,6 +2004,11 @@ class MarkdownEditor(QMainWindow):
         self.side_panel = QTabWidget()
         self.side_panel.setMaximumWidth(320)
         self.side_panel.setMinimumWidth(250)
+        
+        # 파일 탐색기 패널
+        self.file_panel = FileExplorerPanel()
+        self.file_panel.file_clicked.connect(self.open_file)
+        self.side_panel.addTab(self.file_panel, "📂 탐색기")
         
         # 개요 패널
         self.outline_panel = OutlinePanel()
@@ -1950,6 +2044,7 @@ class MarkdownEditor(QMainWindow):
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.editor.textChanged.connect(self.on_text_changed)
         self.editor.cursorPositionChanged.connect(self.update_cursor_pos)
+        self.editor.verticalScrollBar().valueChanged.connect(self.sync_scroll)
         
         # 탭 키 처리 (스니펫)
         self.editor.installEventFilter(self)
@@ -2212,6 +2307,10 @@ class MarkdownEditor(QMainWindow):
         
         view_menu.addSeparator()
         
+        css_act = QAction("커스텀 CSS 설정...", self)
+        css_act.triggered.connect(self.set_custom_css)
+        view_menu.addAction(css_act)
+        
         stats_act = QAction("📊 문서 통계", self)
         stats_act.triggered.connect(self.show_stats)
         view_menu.addAction(stats_act)
@@ -2352,6 +2451,16 @@ class MarkdownEditor(QMainWindow):
         else:
             self.goal_progress.hide()
     
+    def sync_scroll(self, value):
+        if not self.preview.isVisible():
+            return
+            
+        scrollbar = self.editor.verticalScrollBar()
+        max_val = scrollbar.maximum()
+        if max_val > 0:
+            percent = value / max_val
+            self.preview.page().runJavaScript(f"setScroll({percent})")
+
     def update_cursor_pos(self):
         cursor = self.editor.textCursor()
         self.pos_label.setText(f"줄: {cursor.blockNumber()+1}, 열: {cursor.columnNumber()+1}")
@@ -2378,9 +2487,36 @@ class MarkdownEditor(QMainWindow):
         code_bg = "#2d2d2d" if self.dark_mode else "#f5f5f5"
         theme = "dark" if self.dark_mode else "default"
         
+        # Custom CSS Load
+        custom_css = ""
+        if self.custom_css_path and os.path.exists(self.custom_css_path):
+            try:
+                with open(self.custom_css_path, 'r', encoding='utf-8') as f:
+                    custom_css = f.read()
+            except:
+                pass
+        
         html = f'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+MathJax = {{
+  tex: {{
+    inlineMath: [['$', '$'], ['\\\\(', '\\\\)']]
+  }},
+  svg: {{
+    fontCache: 'global'
+  }}
+}};
+
+function setScroll(percent) {{
+    var h = document.documentElement.scrollHeight - window.innerHeight;
+    window.scrollTo(0, percent * h);
+}}
+</script>
+<script type="text/javascript" id="MathJax-script" async
+  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js">
+</script>
 <style>
 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
        line-height: 1.7; padding: 25px; max-width: 850px; margin: 0 auto; 
@@ -2404,6 +2540,7 @@ li {{ margin: 0.3em 0; }}
 hr {{ border: none; border-top: 1px solid {code_bg}; margin: 2em 0; }}
 .mermaid {{ background: transparent; text-align: center; margin: 1em 0; }}
 input[type="checkbox"] {{ margin-right: 8px; }}
+{custom_css}
 </style></head><body>
 {html_content}
 <script>mermaid.initialize({{ startOnLoad: true, theme: '{theme}' }});</script>
@@ -2611,201 +2748,14 @@ input[type="checkbox"] {{ margin-right: 8px; }}
         self.save_snippets()
     
     # ===== 도구 =====
-    def set_word_goal(self):
-        goal, ok = QInputDialog.getInt(self, "단어 목표", "목표 단어 수 (0=비활성화):", 
-                                        self.word_goal, 0, 100000, 100)
-        if ok:
-            self.word_goal = goal
-            self.update_stats()
+    def set_custom_css(self):
+        path, _ = QFileDialog.getOpenFileName(self, "커스텀 CSS 선택", "", "CSS (*.css)")
+        if path:
+            self.custom_css_path = path
             self.save_settings()
-    
-    def format_tables(self):
-        text = self.editor.toPlainText()
-        # 간단한 테이블 정렬 (실제로는 더 복잡한 로직 필요)
-        lines = text.split('\n')
-        # 구현 생략...
-        self.status_bar.showMessage("표 정렬 완료", 2000)
-    
-    def sort_selected_lines(self):
-        cursor = self.editor.textCursor()
-        if cursor.hasSelection():
-            selected = cursor.selectedText()
-            lines = selected.split('\u2029')  # QTextEdit의 줄바꿈
-            lines.sort()
-            cursor.insertText('\n'.join(lines))
-    
-    def remove_empty_lines(self):
-        text = self.editor.toPlainText()
-        lines = [l for l in text.split('\n') if l.strip()]
-        self.editor.setPlainText('\n'.join(lines))
-    
-    def show_stats(self):
-        stats = DocumentStats.calculate(self.editor.toPlainText())
-        dlg = StatsDialog(stats, self)
-        dlg.exec()
-    
-    # ===== Mermaid =====
-    def open_mermaid_viewer(self):
-        text = self.editor.toPlainText()
-        pattern = r'```mermaid\n([\s\S]*?)```'
-        matches = re.findall(pattern, text)
-        
-        code = matches[0].strip() if matches else "flowchart TD\n    A[시작] --> B[끝]"
-        
-        if self.mermaid_viewer is None or not self.mermaid_viewer.isVisible():
-            self.mermaid_viewer = MermaidViewer(code, self.dark_mode, self)
-            self.mermaid_viewer.show()
-        else:
-            self.mermaid_viewer.update_mermaid(code)
-            self.mermaid_viewer.raise_()
-            self.mermaid_viewer.activateWindow()
-    
-    # ===== 보기 =====
-    def toggle_preview(self):
-        sizes = self.splitter.sizes()
-        if sizes[1] > 0:
-            self._preview_size = sizes[1]
-            self.splitter.setSizes([sizes[0] + sizes[1], 0])
-        else:
-            self.splitter.setSizes([sizes[0] - self._preview_size, self._preview_size])
-    
-    def toggle_sidebar(self):
-        self.side_panel.setVisible(not self.side_panel.isVisible())
-    
-    def toggle_focus_mode(self):
-        self.focus_mode = not self.focus_mode
-        self.focus_act.setChecked(self.focus_mode)
-        
-        if self.focus_mode:
-            self.side_panel.hide()
-            self.splitter.widget(1).hide()  # 미리보기 숨김
-            self.menuBar().hide()
-            self.statusBar().hide()
-            self.findChild(QToolBar).hide()
-            
-            style = FOCUS_STYLE_DARK if self.dark_mode else FOCUS_STYLE_LIGHT
-            self.setStyleSheet(style)
-            self.showFullScreen()
-        else:
-            self.exit_focus_mode()
-    
-    def exit_focus_mode(self):
-        if self.focus_mode:
-            self.focus_mode = False
-            self.focus_act.setChecked(False)
-            
-            self.side_panel.show()
-            self.splitter.widget(1).show()
-            self.menuBar().show()
-            self.statusBar().show()
-            self.findChild(QToolBar).show()
-            
-            self.setStyleSheet(self._normal_style)
-            self.showNormal()
-    
-    def toggle_dark_mode(self):
-        self.dark_mode = not self.dark_mode
-        self.dark_act.setChecked(self.dark_mode)
-        self.apply_theme()
-        self.save_settings()
-        
-        if self.mermaid_viewer and self.mermaid_viewer.isVisible():
-            self.mermaid_viewer.dark_mode = self.dark_mode
-            self.mermaid_viewer.setStyleSheet(DARK_STYLE if self.dark_mode else LIGHT_STYLE)
-            self.mermaid_viewer.render_mermaid()
-    
-    # ===== 도움말 =====
-    def show_about(self):
-        QMessageBox.about(self, "MarkdownPro", 
-            f"<h2>MarkdownPro v3.0</h2>"
-            f"<p>프로페셔널 마크다운 에디터</p>"
-            f"<hr>"
-            f"<p><b>주요 기능:</b></p>"
-            f"<ul>"
-            f"<li>실시간 미리보기</li>"
-            f"<li>Mermaid 다이어그램 {len(MERMAID_EXAMPLES)}종 지원</li>"
-            f"<li>포커스 모드</li>"
-            f"<li>문서 개요 & 통계</li>"
-            f"<li>스니펫 관리</li>"
-            f"<li>다크 모드</li>"
-            f"</ul>")
-    
-    def show_shortcuts(self):
-        QMessageBox.information(self, "단축키", """
-<h3>단축키 안내</h3>
-<table>
-<tr><td><b>Ctrl+N</b></td><td>새 문서</td></tr>
-<tr><td><b>Ctrl+O</b></td><td>열기</td></tr>
-<tr><td><b>Ctrl+S</b></td><td>저장</td></tr>
-<tr><td><b>Ctrl+F</b></td><td>찾기/바꾸기</td></tr>
-<tr><td><b>Ctrl+1/2/3/4</b></td><td>제목 1/2/3/4</td></tr>
-<tr><td><b>Ctrl+B</b></td><td>굵게</td></tr>
-<tr><td><b>Ctrl+I</b></td><td>기울임</td></tr>
-<tr><td><b>Ctrl+K</b></td><td>링크</td></tr>
-<tr><td><b>Ctrl+M</b></td><td>Mermaid 뷰어</td></tr>
-<tr><td><b>Ctrl+D</b></td><td>날짜 삽입</td></tr>
-<tr><td><b>F11</b></td><td>포커스 모드</td></tr>
-<tr><td><b>Tab</b></td><td>스니펫 확장</td></tr>
-<tr><td><b>Esc</b></td><td>포커스 모드 종료</td></tr>
-</table>
-""")
-    
-    def closeEvent(self, event):
-        if not self.check_save():
-            event.ignore()
-            return
-        if selected:
-            cursor.insertText(f"{wrapper}{selected}{wrapper}")
-        else:
-            cursor.insertText(f"{wrapper}{wrapper}")
-            cursor.movePosition(QTextCursor.MoveOperation.Left, n=len(wrapper))
-            self.editor.setTextCursor(cursor)
-        self.editor.setFocus()
-    
-    def insert_completion(self, text):
-        self.editor.textCursor().insertText(text)
-    
-    def insert_template(self, content):
-        if self.check_save():
-            self.editor.setPlainText(content)
-            self.current_file = None
-            self.is_modified = True
-            self.update_title()
-    
-    def insert_table(self):
-        dlg = TableDialog(self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.insert_at_cursor(dlg.get_markdown())
-    
-    def insert_link(self):
-        cursor = self.editor.textCursor()
-        dlg = LinkDialog(self, cursor.selectedText())
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            if cursor.hasSelection():
-                cursor.insertText(dlg.get_markdown())
-            else:
-                self.insert_text(dlg.get_markdown())
-    
-    def insert_image(self):
-        dlg = ImageDialog(self)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.insert_text(dlg.get_markdown())
-    
-    def insert_emoji(self):
-        dlg = EmojiDialog(self)
-        dlg.emoji_selected.connect(self.insert_text)
-        dlg.exec()
-    
-    def show_find_dialog(self):
-        dlg = FindReplaceDialog(self.editor, self)
-        dlg.show()
-    
-    def manage_snippets(self):
-        dlg = SnippetDialog(self.snippets, self)
-        dlg.exec()
-        self.save_snippets()
-    
-    # ===== 도구 =====
+            self.update_preview()
+            self.status_bar.showMessage(f"CSS 적용됨: {path}", 3000)
+
     def set_word_goal(self):
         goal, ok = QInputDialog.getInt(self, "단어 목표", "목표 단어 수 (0=비활성화):", 
                                         self.word_goal, 0, 100000, 100)
@@ -2952,8 +2902,7 @@ input[type="checkbox"] {{ margin-right: 8px; }}
         self.save_settings()
         self.save_snippets()
         event.accept()
-
-
+    
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     try:

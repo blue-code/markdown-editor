@@ -1,6 +1,6 @@
-# MarkdownPro v3.0
+# Nebula Note v1.0
 
-> 🚀 프로페셔널 마크다운 에디터 - Mermaid 19종 다이어그램 완벽 지원
+> ✨ Pure & Sexy Markdown Editor - Mermaid 19종 다이어그램 완벽 지원
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)]()
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.4+-green.svg)]()
@@ -82,11 +82,23 @@ pip install --upgrade pip
 pip install -r requirements.txt
 pip install pyinstaller
 
-# 실행 파일 빌드 (dist/MarkdownPro/MarkdownPro.exe 생성)
-pyinstaller --noconfirm --windowed --name MarkdownPro markdown_editor.py
+# 실행 파일 빌드 (dist/Nebula Note/Nebula Note.exe 생성)
+pyinstaller --noconfirm --windowed --name Nebula Note markdown_editor.py
 
 # 또는 스크립트로 한 번에 실행
 build_exe.bat
+```
+
+### Windows 설치 파일(NSIS) 빌드
+
+```powershell
+# NSIS 설치 후 makensis.exe가 PATH에 있어야 합니다.
+# https://nsis.sourceforge.io/Download
+
+# EXE 빌드 + 인스톨러 생성
+build_installer.bat
+
+# 결과: dist\NebulaNote-Setup.exe
 ```
 
 ### macOS DMG 빌드
@@ -96,7 +108,7 @@ build_exe.bat
 chmod +x build_dmg.sh
 ./build_dmg.sh
 
-# 결과: dist/MarkdownPro-3.0.0.dmg
+# 결과: dist/Nebula Note-3.0.0.dmg
 ```
 
 ## 🚀 사용법
@@ -202,7 +214,7 @@ markdown-editor/
 ### macOS 보안 경고
 ```bash
 # 격리 속성 제거
-xattr -cr /Applications/MarkdownPro.app
+xattr -cr /Applications/Nebula Note.app
 ```
 
 ### WebEngine 오류

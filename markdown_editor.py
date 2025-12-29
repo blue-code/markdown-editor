@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-MarkdownPro v3.0 - 프로페셔널 마크다운 에디터
+Nebula Note v1.0 - Pure & Sexy Markdown Editor
 Features: Mermaid 전체 지원, 포커스 모드, 문서 개요, 통계, 스니펫 등
 """
 
@@ -1506,7 +1506,6 @@ class MermaidViewer(QMainWindow):
         
         html = f'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
@@ -1518,68 +1517,117 @@ html,body{{width:100%;height:100%;overflow:auto;background:{bg}}}
 <div id="container"><div id="diagram" class="mermaid">
 {self.mermaid_code}
 </div></div>
-<script>
-mermaid.initialize({{startOnLoad:true,theme:'{theme}',securityLevel:'loose',
-  flowchart:{{useMaxWidth:false,htmlLabels:true}},
-  sequence:{{useMaxWidth:false}},
-  gantt:{{useMaxWidth:false}},
-  journey:{{useMaxWidth:false}},
-  timeline:{{useMaxWidth:false}},
-  mindmap:{{useMaxWidth:false}},
-  sankey:{{useMaxWidth:false}},
+
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+mermaid.initialize({{
+  startOnLoad: false,
+  theme: '{theme}',
+  securityLevel: 'loose',
+  flowchart: {{ useMaxWidth: false, htmlLabels: true }},
+  sequence: {{ useMaxWidth: false }},
+  gantt: {{ useMaxWidth: false }},
+  journey: {{ useMaxWidth: false }},
+  timeline: {{ useMaxWidth: false }},
+  mindmap: {{ useMaxWidth: false }},
+  sankey: {{ useMaxWidth: false }},
 }});
 
-var bridge=null;
-new QWebChannel(qt.webChannelTransport,function(c){{bridge=c.objects.bridge}});
+await mermaid.run({{
+    querySelector: '.mermaid'
+}});
+</script>
 
-function setZoom(s){{document.getElementById('diagram').style.transform='scale('+(s/100)+')'}}
+<script>
+var bridge = null;
+new QWebChannel(qt.webChannelTransport, function(c) {{ bridge = c.objects.bridge; }});
 
-function fitToView(){{
-  var c=document.getElementById('container'),d=document.getElementById('diagram'),svg=d.querySelector('svg');
-  if(svg){{
-    var rect=svg.getBoundingClientRect();
-    var sw=rect.width,sh=rect.height;
-    var cw=c.clientWidth-60,ch=c.clientHeight-60;
-    var scale=Math.min(cw/sw,ch/sh,2)*100;
-    return Math.round(scale);
+function setZoom(s) {{
+    var el = document.getElementById('diagram');
+    if(el) el.style.transform = 'scale(' + (s/100) + ')';
+}}
+
+function fitToView() {{
+  var c = document.getElementById('container');
+  var d = document.getElementById('diagram');
+  var svg = d.querySelector('svg');
+  if (svg) {{
+    var rect = svg.getBoundingClientRect();
+    // Use natural metrics if possible, but getBoundingClientRect respects transform
+    // We want the scale relative to 100%
+    // If current scale is not 1, rect is scaled.
+    // Let's assume we want to fit *whatever* is there to the container.
+    var sw = rect.width;
+    var sh = rect.height;
+    
+    // Adjust for current scale to get "original" size approximation? 
+    // Actually, if we just want to fit 'rect' into 'c', we calculate the ratio.
+    // But if we are already zoomed in, sw is large.
+    // It's safer to rely on the current visual check.
+    
+    var cw = c.clientWidth - 60;
+    var ch = c.clientHeight - 60;
+    
+    // To properly reset, we might want to unzoom first or calculate taking current transform into account.
+    // But for simplicity, we find the factor that makes (sw, sh) fit into (cw, ch).
+    // New Scale = Current Scale * (Target / Current)
+    // We don't have easy access to Current Scale variable in JS here unless we track it.
+    // But we know 'sw' is the current width.
+    var scale = Math.min(cw/sw, ch/sh) * 100;
+    
+    // If we multiply by current scale? No, this 'scale' is a multiplier for the *current* size.
+    // But our Python side slider sets absolute scale.
+    // So we need to return the *absolute* scale value (0-500).
+    
+    // Let's try to get current transform scale
+    var currentScale = 1;
+    var match = d.style.transform.match(/scale\\\\(([^)]+)\\\\)/);
+    if (match) currentScale = parseFloat(match[1]);
+    
+    var finalScale = currentScale * scale;
+    
+    // clamp
+    finalScale = Math.min(Math.max(finalScale, 10), 500);
+    return Math.round(finalScale);
   }}
   return 100;
 }}
 
-function exportSVG(){{
-  var svg=document.querySelector('#diagram svg');
-  if(svg&&bridge){{
-    var clone=svg.cloneNode(true);
-    clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+function exportSVG() {{
+  var svg = document.querySelector('#diagram svg');
+  if (svg && bridge) {{
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     bridge.receiveSvg(new XMLSerializer().serializeToString(clone));
   }}
 }}
 
-function exportPNG(scale){{
-  scale=scale||1;
-  var svg=document.querySelector('#diagram svg');
-  if(svg&&bridge){{
-    var data=new XMLSerializer().serializeToString(svg);
-    var canvas=document.createElement('canvas');
-    var ctx=canvas.getContext('2d');
-    var img=new Image();
-    var blob=new Blob([data],{{type:'image/svg+xml;charset=utf-8'}});
-    var url=URL.createObjectURL(blob);
-    img.onload=function(){{
-      canvas.width=img.width*scale;
-      canvas.height=img.height*scale;
-      ctx.scale(scale,scale);
-      ctx.fillStyle='{bg}';
-      ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.drawImage(img,0,0);
+function exportPNG(scale) {{
+  scale = scale || 1;
+  var svg = document.querySelector('#diagram svg');
+  if (svg && bridge) {{
+    var data = new XMLSerializer().serializeToString(svg);
+    var canvas = document.createElement('canvas');
+    var ctx = canvas.getContext('2d');
+    var img = new Image();
+    var blob = new Blob([data], {{type:'image/svg+xml;charset=utf-8'}});
+    var url = URL.createObjectURL(blob);
+    img.onload = function() {{
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      ctx.scale(scale, scale);
+      ctx.fillStyle = '{bg}';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
       bridge.receivePng(canvas.toDataURL('image/png'));
     }};
-    img.src=url;
+    img.src = url;
   }}
 }}
 </script></body></html>'''
-        self.web_view.setHtml(html)
+        self.web_view.setHtml(html, QUrl("https://cdn.jsdelivr.net/"))
     
     def on_zoom_changed(self, value):
         self.zoom_level = value
@@ -2498,7 +2546,6 @@ class MarkdownEditor(QMainWindow):
         
         html = f'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>
 MathJax = {{
   tex: {{
@@ -2543,10 +2590,22 @@ input[type="checkbox"] {{ margin-right: 8px; }}
 {custom_css}
 </style></head><body>
 {html_content}
-<script>mermaid.initialize({{ startOnLoad: true, theme: '{theme}' }});</script>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+mermaid.initialize({{
+  startOnLoad: false,
+  theme: '{theme}',
+  securityLevel: 'loose'
+}});
+
+await mermaid.run({{
+    querySelector: '.mermaid'
+}});
+</script>
 </body></html>'''
         
-        self.preview.setHtml(html)
+        self.preview.setHtml(html, QUrl("https://cdn.jsdelivr.net/"))
     
     def update_recent_menu(self):
         self.recent_menu.clear()
@@ -2861,8 +2920,8 @@ input[type="checkbox"] {{ margin-right: 8px; }}
     
     # ===== 도움말 =====
     def show_about(self):
-        QMessageBox.about(self, "MarkdownPro", 
-            f"<h2>MarkdownPro v3.0</h2>"
+        QMessageBox.about(self, "Nebula Note", 
+            f"<h2>Nebula Note v1.0</h2>"
             f"<p>프로페셔널 마크다운 에디터</p>"
             f"<hr>"
             f"<p><b>주요 기능:</b></p>"

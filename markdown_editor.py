@@ -164,37 +164,33 @@ sequenceDiagram
 
     # 4. Class Diagram
     "클래스 다이어그램": """```mermaid
+---
+title: Animal example
+---
 classDiagram
-    class Animal {
-        <<abstract>>
-        +String name
-        +int age
-        +makeSound()* void
-        +move() void
+    note "From Duck till Zebra"
+    Animal <|-- Duck
+    note for Duck "can fly\ncan swim\ncan dive\ncan help in debugging"
+    Animal <|-- Fish
+    Animal <|-- Zebra
+    Animal : +int age
+    Animal : +String gender
+    Animal: +isMammal()
+    Animal: +mate()
+    class Duck{
+        +String beakColor
+        +swim()
+        +quack()
     }
-    
-    class Dog {
-        +String breed
-        +bark() void
-        +fetch() void
+    class Fish{
+        -int sizeInFeet
+        -canEat()
     }
-    
-    class Cat {
-        +String color
-        +meow() void
-        +climb() void
+    class Zebra{
+        +bool is_wild
+        +run()
     }
-    
-    class Pet {
-        <<interface>>
-        +play() void
-        +feed() void
-    }
-    
-    Animal <|-- Dog : 상속
-    Animal <|-- Cat : 상속
-    Pet <|.. Dog : 구현
-    Pet <|.. Cat : 구현
+
 ```""",
 
     # 5. State Diagram
@@ -365,53 +361,38 @@ journey
     # 12. Quadrant Chart
     "사분면 차트": """```mermaid
 quadrantChart
-    title 기능 우선순위 매트릭스
-    x-axis 낮은 노력 --> 높은 노력
-    y-axis 낮은 가치 --> 높은 가치
-    quadrant-1 즉시 실행
-    quadrant-2 계획 수립
-    quadrant-3 위임 가능
-    quadrant-4 재검토 필요
-    
-    로그인 기능: [0.8, 0.9]
-    다크모드: [0.2, 0.6]
-    AI 추천: [0.9, 0.8]
-    알림 기능: [0.4, 0.5]
-    설정 페이지: [0.3, 0.3]
-    분석 대시보드: [0.7, 0.7]
+    title Reach and engagement of campaigns
+    x-axis Low Reach --> High Reach
+    y-axis Low Engagement --> High Engagement
+    quadrant-1 We should expand
+    quadrant-2 Need to promote
+    quadrant-3 Re-evaluate
+    quadrant-4 May be improved
+    Campaign A: [0.3, 0.6]
+    Campaign B: [0.45, 0.23]
+    Campaign C: [0.57, 0.69]
+    Campaign D: [0.78, 0.34]
+    Campaign E: [0.40, 0.34]
+    Campaign F: [0.35, 0.78]
+
 ```""",
 
     # 13. Requirement Diagram
     "요구사항 다이어그램": """```mermaid
 requirementDiagram
-    requirement 사용자인증 {
-        id: REQ-001
-        text: 시스템은 사용자 인증을 제공해야 한다
-        risk: high
-        verifymethod: test
+
+    requirement test_req {
+    id: 1
+    text: the test text.
+    risk: high
+    verifymethod: test
     }
-    
-    requirement 비밀번호보안 {
-        id: REQ-002
-        text: 비밀번호는 암호화되어야 한다
-        risk: high
-        verifymethod: inspection
+
+    element test_entity {
+    type: simulation
     }
-    
-    functionalRequirement 로그인 {
-        id: FR-001
-        text: 이메일/비밀번호로 로그인
-        risk: medium
-        verifymethod: test
-    }
-    
-    element 인증모듈 {
-        type: module
-    }
-    
-    사용자인증 - contains -> 비밀번호보안
-    사용자인증 - derives -> 로그인
-    인증모듈 - satisfies -> 로그인
+
+    test_entity - satisfies -> test_req
 ```""",
 
     # 14. Timeline
@@ -438,33 +419,24 @@ timeline
     # 15. Sankey Diagram
     "생키 다이어그램": """```mermaid
 sankey-beta
-
-마케팅,웹사이트,5000
-마케팅,앱,3000
-마케팅,SNS,2000
-
-웹사이트,회원가입,3000
-웹사이트,이탈,2000
-앱,회원가입,2500
-앱,이탈,500
-SNS,회원가입,1500
-SNS,이탈,500
-
-회원가입,구매,4000
-회원가입,미구매,3000
-
-구매,재구매,2500
-구매,1회성,1500
+Net Primary production %,Consumed energy %,85
+Net Primary production %,Detritus %,15
+Consumed energy %,Egested energy %,20%
+Consumed energy %,Assimilated Energy %,65
+Assimilated Energy %, Energy for Growth %, 25
+Assimilated Energy %, Respired energy %, 40
+Detritus %, Consumed by microbes %, 10
+Detritus %, Stored in the earth %, 5
 ```""",
 
     # 16. XY Chart
     "XY 차트": """```mermaid
 xychart-beta
-    title "월별 매출 추이"
-    x-axis [1월, 2월, 3월, 4월, 5월, 6월, 7월, 8월, 9월, 10월, 11월, 12월]
-    y-axis "매출 (억원)" 0 --> 100
-    bar [30, 35, 45, 50, 55, 65, 70, 68, 72, 78, 85, 95]
-    line [30, 35, 45, 50, 55, 65, 70, 68, 72, 78, 85, 95]
+  title "Training progress"
+  x-axis [mon, tues, wed, thur, fri, sat, sun]
+  y-axis "Time trained (minutes)" 0 --> 300
+  bar [60, 0, 120, 180, 230, 300, 0]
+  line [60, 0, 120, 180, 230, 300, 0]
 ```""",
 
     # 17. Block Diagram
@@ -519,26 +491,32 @@ C4Context
     Rel(ecommerce, email, "알림 발송")
 ```""",
 
-    # 19. ZenUML
-    "ZenUML 시퀀스": """```mermaid
-zenuml
-    title 주문 처리 프로세스
-    
-    @Actor Client
-    @Boundary OrderController
-    @Control OrderService
-    @Entity OrderRepository
-    
-    Client->OrderController.createOrder(items) {
-        OrderService.validateOrder(items) {
-            if (valid) {
-                OrderRepository.save(order)
-                return orderId
-            } else {
-                throw ValidationError
-            }
-        }
-    }
+    # 19. Kanban
+    "kanban": """```mermaid
+---
+config:
+  kanban:
+    ticketBaseUrl: 'https://mermaidchart.atlassian.net/browse/#TICKET#'
+---
+kanban
+  Todo
+    [Create Documentation]
+    docs[Create Blog about the new diagram]
+  [In progress]
+    id6[Create renderer so that it works in all cases. We also add some extra text here for testing purposes. And some more just for the extra flare.]
+  id9[Ready for deploy]
+    id8[Design grammar]@{ assigned: 'knsv' }
+  id10[Ready for test]
+    id4[Create parsing tests]@{ ticket: MC-2038, assigned: 'K.Sveidqvist', priority: 'High' }
+    id66[last item]@{ priority: 'Very Low', assigned: 'knsv' }
+  id11[Done]
+    id5[define getData]
+    id2[Title of diagram is more than 100 chars when user duplicates diagram with 100 char]@{ ticket: MC-2036, priority: 'Very High'}
+    id3[Update DB function]@{ ticket: MC-2037, assigned: knsv, priority: 'High' }
+
+  id12[Can't reproduce]
+    id3[Weird flickering in Firefox]
+
 ```""",
 }
 
@@ -1984,6 +1962,10 @@ class MarkdownEditor(QMainWindow):
         self.auto_save_timer = QTimer()
         self._preview_size = 500
         self._normal_style = ""
+        self._disk_state = None
+        self._suspend_file_check = False
+        self._external_prompt_active = False
+        self.file_check_timer = QTimer()
         
         self.load_settings()
         self.load_snippets()
@@ -1992,6 +1974,7 @@ class MarkdownEditor(QMainWindow):
         self.setup_toolbar()
         self.setup_shortcuts()
         self.setup_auto_save()
+        self.setup_file_check()
         self.apply_theme()
         self.update_title()
         self.update_preview()
@@ -2175,6 +2158,11 @@ class MarkdownEditor(QMainWindow):
         open_act.setShortcut(QKeySequence.StandardKey.Open)
         open_act.triggered.connect(self.open_file)
         file_menu.addAction(open_act)
+
+        refresh_act = QAction("새로고침", self)
+        refresh_act.setShortcut(QKeySequence("F5"))
+        refresh_act.triggered.connect(self.reload_file)
+        file_menu.addAction(refresh_act)
         
         self.recent_menu = file_menu.addMenu("최근 파일")
         self.update_recent_menu()
@@ -2423,6 +2411,7 @@ class MarkdownEditor(QMainWindow):
             ("|", None, None),
             ("📈", self.open_mermaid_viewer, "Mermaid 뷰어"),
             ("🎯", self.toggle_focus_mode, "포커스 모드"),
+            ("🔄", self.reload_file, "새로고침"),
         ]
         
         for text, action, tooltip in buttons:
@@ -2456,6 +2445,10 @@ class MarkdownEditor(QMainWindow):
     def setup_auto_save(self):
         self.auto_save_timer.timeout.connect(self.auto_save)
         self.auto_save_timer.start(60000)
+
+    def setup_file_check(self):
+        self.file_check_timer.timeout.connect(self.check_external_file_change)
+        self.file_check_timer.start(2000)
     
     def apply_theme(self):
         style = DARK_STYLE if self.dark_mode else LIGHT_STYLE
@@ -2644,6 +2637,7 @@ await mermaid.run({{
             self.editor.clear()
             self.current_file = None
             self.is_modified = False
+            self._disk_state = None
             self.update_title()
     
     def open_file(self, path=None):
@@ -2655,15 +2649,19 @@ await mermaid.run({{
                 "마크다운 (*.md *.markdown *.txt);;모든 파일 (*)")
         
         if path:
+            self._suspend_file_check = True
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     self.editor.setPlainText(f.read())
                 self.current_file = path
                 self.is_modified = False
+                self._disk_state = self._get_disk_state(path)
                 self.update_title()
                 self.add_to_recent(path)
             except Exception as e:
                 QMessageBox.critical(self, "오류", str(e))
+            finally:
+                self._suspend_file_check = False
     
     def save_file(self):
         if self.current_file:
@@ -2677,16 +2675,20 @@ await mermaid.run({{
             self._save(path)
     
     def _save(self, path):
+        self._suspend_file_check = True
         try:
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(self.editor.toPlainText())
             self.current_file = path
             self.is_modified = False
+            self._disk_state = self._get_disk_state(path)
             self.update_title()
             self.add_to_recent(path)
             self.status_bar.showMessage(f"저장됨: {path}", 3000)
         except Exception as e:
             QMessageBox.critical(self, "오류", str(e))
+        finally:
+            self._suspend_file_check = False
     
     def auto_save(self):
         if self.current_file and self.is_modified:
@@ -2702,6 +2704,77 @@ await mermaid.run({{
             elif reply == QMessageBox.StandardButton.Cancel:
                 return False
         return True
+
+    def _get_disk_state(self, path):
+        try:
+            stat = os.stat(path)
+            return (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            return None
+
+    def check_external_file_change(self):
+        if self._suspend_file_check or self._external_prompt_active:
+            return
+        if not self.current_file or not os.path.exists(self.current_file):
+            return
+        disk_state = self._get_disk_state(self.current_file)
+        if disk_state is None:
+            return
+        if self._disk_state is None:
+            self._disk_state = disk_state
+            return
+        if disk_state == self._disk_state:
+            return
+
+        self._external_prompt_active = True
+        try:
+            msg = QMessageBox(self)
+            msg.setIcon(QMessageBox.Icon.Warning)
+            msg.setWindowTitle("외부 변경 감지")
+            msg.setText("현재 파일이 외부에서 변경되었습니다.")
+            if self.is_modified:
+                msg.setInformativeText("새로고침하면 현재 편집 내용이 사라집니다. 다시 읽어올까요?")
+            else:
+                msg.setInformativeText("다시 읽어올까요?")
+            reload_btn = msg.addButton("새로고침", QMessageBox.ButtonRole.AcceptRole)
+            keep_btn = msg.addButton("이대로 유지", QMessageBox.ButtonRole.RejectRole)
+            msg.setDefaultButton(reload_btn)
+            msg.exec()
+
+            if msg.clickedButton() == reload_btn:
+                self.reload_file(force=True)
+            else:
+                self._disk_state = disk_state
+                self.status_bar.showMessage("외부 변경을 무시하고 현재 내용을 유지합니다.", 3000)
+        finally:
+            self._external_prompt_active = False
+
+    def reload_file(self, force=False):
+        if not self.current_file:
+            self.status_bar.showMessage("열려있는 파일이 없습니다.", 2000)
+            return
+        if not force and self.is_modified:
+            reply = QMessageBox.question(
+                self,
+                "새로고침",
+                "현재 내용을 버리고 파일을 다시 불러올까요?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        self._suspend_file_check = True
+        try:
+            with open(self.current_file, 'r', encoding='utf-8') as f:
+                self.editor.setPlainText(f.read())
+            self.is_modified = False
+            self._disk_state = self._get_disk_state(self.current_file)
+            self.update_title()
+            self.status_bar.showMessage("새로고침 완료", 2000)
+        except Exception as e:
+            QMessageBox.critical(self, "오류", str(e))
+        finally:
+            self._suspend_file_check = False
     
     def create_backup(self):
         if not os.path.exists(BACKUP_DIR):

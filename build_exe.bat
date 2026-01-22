@@ -50,56 +50,65 @@ if %errorlevel% neq 0 (
 )
 
 :: 5. Check Output and Optional Installer Build
-if exist "dist\Nebula Note\Nebula Note.exe" (
-    echo.
-    echo ======================================================
-    echo [*] Executable Build Success!
-    echo Location: dist\Nebula Note\Nebula Note.exe
-    echo ======================================================
-    
-    :: Check for NSIS to build the Setup installer
-    set "MAKENSIS_CMD=makensis.exe"
-    where /q makensis.exe
-    if %errorlevel% neq 0 (
-        if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
-            set "MAKENSIS_CMD=C:\Program Files (x86)\NSIS\makensis.exe"
-        ) else if exist "C:\Program Files\NSIS\makensis.exe" (
-            set "MAKENSIS_CMD=C:\Program Files\NSIS\makensis.exe"
-        ) else (
-            set "MAKENSIS_CMD="
-        )
-    )
-
-    if defined MAKENSIS_CMD (
-        echo.
-        echo [5/5] NSIS detected! Building Setup Installer...
-        "%MAKENSIS_CMD%" installer.nsi
-        if exist "dist\NebulaNote-Setup.exe" (
-            echo.
-            echo ======================================================
-            echo [*] Setup Installer Build Success!
-            echo Location: dist\NebulaNote-Setup.exe
-            echo ======================================================
-        ) else (
-            echo Error: Installer build failed. Check installer.nsi logs.
-        )
-    ) else (
-        echo.
-        echo [Notice] 'NebulaNote-Setup.exe' (Installer) requires NSIS.
-        echo If you already installed NSIS, please restart your terminal
-        echo or make sure it's installed at 'C:\Program Files (x86)\NSIS'.
-        echo https://nsis.sourceforge.io/Download
-    )
-    
-    popd
-    echo.
-    echo Done.
-    pause
-    exit /b 0
-) else (
+if not exist "dist\Nebula Note\Nebula Note.exe" (
     echo Error: Output executable not found.
     goto :error
 )
+
+echo.
+echo ======================================================
+echo [*] Executable Build Success!
+echo Location: dist\Nebula Note\Nebula Note.exe
+echo ======================================================
+
+if defined SKIP_INSTALLER (
+    echo [Notice] Skipping installer build as requested.
+    goto :build_done
+)
+
+:: NSIS Detection
+set "MAKENSIS_CMD=makensis.exe"
+where /q makensis.exe
+if %errorlevel% equ 0 goto :run_nsis
+
+if exist "C:\Program Files (x86)\NSIS\makensis.exe" (
+    set "MAKENSIS_CMD=C:\Program Files (x86)\NSIS\makensis.exe"
+    goto :run_nsis
+)
+
+if exist "C:\Program Files\NSIS\makensis.exe" (
+    set "MAKENSIS_CMD=C:\Program Files\NSIS\makensis.exe"
+    goto :run_nsis
+)
+
+:: NSIS Not Found
+echo.
+echo [Notice] 'NebulaNote-Setup.exe' requires NSIS.
+echo If you already installed NSIS, please restart your terminal
+echo or make sure it's installed at 'C:\Program Files (x86)\NSIS'.
+echo https://nsis.sourceforge.io/Download
+goto :build_done
+
+:run_nsis
+echo.
+echo [5/5] NSIS detected! Building Setup Installer...
+"%MAKENSIS_CMD%" installer.nsi
+if exist "dist\NebulaNote-Setup.exe" (
+    echo.
+    echo ======================================================
+    echo [*] Setup Installer Build Success!
+    echo Location: dist\NebulaNote-Setup.exe
+    echo ======================================================
+) else (
+    echo Error: Installer build failed. Check installer.nsi logs.
+)
+
+:build_done
+popd
+echo.
+echo Done.
+if not defined NO_PAUSE pause
+exit /b 0
 
 :error
 echo.
@@ -107,5 +116,5 @@ echo ======================================================
 echo Build Failed. Please check the logs above.
 echo ======================================================
 popd
-pause
+if not defined NO_PAUSE pause
 exit /b 1

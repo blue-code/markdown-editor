@@ -38,6 +38,8 @@ from PyQt6.QtWebChannel import QWebChannel
 
 import markdown
 
+from mermaid_utils import extract_mermaid_blocks
+
 CONFIG_FILE = os.path.expanduser("~/.markdownpro_config.json")
 BACKUP_DIR = os.path.expanduser("~/.markdownpro_backups")
 SNIPPETS_FILE = os.path.expanduser("~/.markdownpro_snippets.json")
@@ -909,6 +911,8 @@ class DocumentStats:
 
 # ============== 다이얼로그 ==============
 
+
+
 class TableDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1369,8 +1373,10 @@ class StatsDialog(QDialog):
 class MermaidViewer(QMainWindow):
     """Mermaid 다이어그램 전용 뷰어 - 확대/축소, 전체화면, 내보내기"""
     
-    def __init__(self, mermaid_code="", dark_mode=False, parent=None):
+    def __init__(self, mermaid_code="", dark_mode=False, parent=None, mermaid_blocks=None, current_index=0):
         super().__init__(parent)
+        self.mermaid_blocks = mermaid_blocks or []
+        self.current_index = current_index
         self.mermaid_code = mermaid_code
         self.dark_mode = dark_mode
         self.zoom_level = 100
@@ -1380,7 +1386,7 @@ class MermaidViewer(QMainWindow):
         self.bridge.png_ready.connect(self.save_png_data)
         self.pending_save_path = None
         self.setup_ui()
-        self.render_mermaid()
+        self.set_mermaid_blocks(self.mermaid_blocks, self.current_index, fallback_code=self.mermaid_code)
     
     def setup_ui(self):
         self.setWindowTitle("Mermaid 다이어그램 뷰어")
@@ -1399,8 +1405,24 @@ class MermaidViewer(QMainWindow):
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(15, 8, 15, 8)
         
+        # 다이어그램 이동
+        self.prev_btn = QPushButton("이전")
+        self.prev_btn.clicked.connect(self.prev_diagram)
+        tb_layout.addWidget(self.prev_btn)
+        
+        self.page_label = QLabel("0/0")
+        self.page_label.setFixedWidth(70)
+        self.page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tb_layout.addWidget(self.page_label)
+        
+        self.next_btn = QPushButton("다음")
+        self.next_btn.clicked.connect(self.next_diagram)
+        tb_layout.addWidget(self.next_btn)
+        
+        tb_layout.addSpacing(10)
+        
         # 줌 컨트롤
-        zoom_out = QPushButton("−")
+        zoom_out = QPushButton("-")
         zoom_out.setFixedSize(36, 36)
         zoom_out.clicked.connect(self.zoom_out)
         tb_layout.addWidget(zoom_out)
@@ -1477,6 +1499,49 @@ class MermaidViewer(QMainWindow):
         
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+    
+    @staticmethod
+    def default_mermaid_code():
+        return "flowchart TD\n    A[Start] --> B[End]"
+    
+    def set_mermaid_blocks(self, blocks, index=0, fallback_code=""):
+        if blocks:
+            self.mermaid_blocks = blocks
+            self.current_index = max(0, min(index, len(blocks) - 1))
+            self.mermaid_code = self.mermaid_blocks[self.current_index]
+        else:
+            self.mermaid_blocks = []
+            self.current_index = 0
+            self.mermaid_code = fallback_code.strip() or self.default_mermaid_code()
+        self.update_navigation_state()
+        self.render_mermaid()
+    
+    def update_navigation_state(self):
+        total = len(self.mermaid_blocks) if self.mermaid_blocks else 1
+        current = self.current_index + 1 if self.mermaid_blocks else 1
+        self.page_label.setText(f"{current}/{total}")
+        if self.mermaid_blocks:
+            self.prev_btn.setEnabled(self.current_index > 0)
+            self.next_btn.setEnabled(self.current_index < len(self.mermaid_blocks) - 1)
+        else:
+            self.prev_btn.setEnabled(False)
+            self.next_btn.setEnabled(False)
+    
+    def prev_diagram(self):
+        if not self.mermaid_blocks or self.current_index <= 0:
+            return
+        self.current_index -= 1
+        self.mermaid_code = self.mermaid_blocks[self.current_index]
+        self.update_navigation_state()
+        self.render_mermaid()
+    
+    def next_diagram(self):
+        if not self.mermaid_blocks or self.current_index >= len(self.mermaid_blocks) - 1:
+            return
+        self.current_index += 1
+        self.mermaid_code = self.mermaid_blocks[self.current_index]
+        self.update_navigation_state()
+        self.render_mermaid()
     
     def render_mermaid(self):
         bg = "#1e1e1e" if self.dark_mode else "#ffffff"
@@ -1667,8 +1732,10 @@ function exportPNG(scale) {{
         self.pending_save_path = None
     
     def update_mermaid(self, code):
-        self.mermaid_code = code
-        self.render_mermaid()
+        self.set_mermaid_blocks([code.strip()] if code else [], 0, fallback_code=code)
+    
+    def update_mermaid_blocks(self, blocks, index=0):
+        self.set_mermaid_blocks(blocks, index=index)
     
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
@@ -1965,6 +2032,7 @@ class MarkdownEditor(QMainWindow):
         self._disk_state = None
         self._suspend_file_check = False
         self._external_prompt_active = False
+        self._focus_prev = {}
         self.file_check_timer = QTimer()
         
         self.load_settings()
@@ -2096,6 +2164,7 @@ class MarkdownEditor(QMainWindow):
         self.goal_progress.hide()
         el.addWidget(self.goal_progress)
         
+        self.editor_container = editor_w
         self.splitter.addWidget(editor_w)
         
         # 미리보기
@@ -2106,6 +2175,7 @@ class MarkdownEditor(QMainWindow):
         self.preview = QWebEngineView()
         pl.addWidget(self.preview)
         
+        self.preview_container = preview_w
         self.splitter.addWidget(preview_w)
         self.splitter.setSizes([550, 550])
         
@@ -2924,20 +2994,26 @@ await mermaid.run({{
     # ===== Mermaid =====
     def open_mermaid_viewer(self):
         text = self.editor.toPlainText()
-        pattern = r'```mermaid\n([\s\S]*?)```'
-        matches = re.findall(pattern, text)
-        
-        code = matches[0].strip() if matches else "flowchart TD\n    A[시작] --> B[끝]"
+        blocks = extract_mermaid_blocks(text)
+        if not blocks:
+            blocks = [MermaidViewer.default_mermaid_code()]
         
         if self.mermaid_viewer is None or not self.mermaid_viewer.isVisible():
-            self.mermaid_viewer = MermaidViewer(code, self.dark_mode, self)
+            self.mermaid_viewer = MermaidViewer(
+                blocks[0],
+                self.dark_mode,
+                self,
+                mermaid_blocks=blocks,
+                current_index=0
+            )
             self.mermaid_viewer.show()
         else:
-            self.mermaid_viewer.update_mermaid(code)
+            self.mermaid_viewer.update_mermaid_blocks(blocks, index=0)
             self.mermaid_viewer.raise_()
             self.mermaid_viewer.activateWindow()
-    
-    # ===== 보기 =====
+
+    # ===== ?? =====
+
     def toggle_preview(self):
         sizes = self.splitter.sizes()
         if sizes[1] > 0:
@@ -2954,14 +3030,24 @@ await mermaid.run({{
         self.focus_act.setChecked(self.focus_mode)
         
         if self.focus_mode:
+            self._focus_prev = {
+                'side_visible': self.side_panel.isVisible(),
+                'editor_visible': self.editor_container.isVisible(),
+                'preview_visible': self.preview_container.isVisible(),
+                'splitter_sizes': self.splitter.sizes(),
+                'menu_visible': self.menuBar().isVisible(),
+                'status_visible': self.statusBar().isVisible(),
+                'toolbar_visible': self.findChild(QToolBar).isVisible(),
+            }
             self.side_panel.hide()
-            self.splitter.widget(1).hide()  # 미리보기 숨김
+            self.editor_container.hide()
+            self.preview_container.show()
+            self.splitter.setSizes([0, 1])
             self.menuBar().hide()
             self.statusBar().hide()
             self.findChild(QToolBar).hide()
             
-            style = FOCUS_STYLE_DARK if self.dark_mode else FOCUS_STYLE_LIGHT
-            self.setStyleSheet(style)
+            self.setStyleSheet(self._normal_style)
             self.showFullScreen()
         else:
             self.exit_focus_mode()
@@ -2971,11 +3057,41 @@ await mermaid.run({{
             self.focus_mode = False
             self.focus_act.setChecked(False)
             
-            self.side_panel.show()
-            self.splitter.widget(1).show()
-            self.menuBar().show()
-            self.statusBar().show()
-            self.findChild(QToolBar).show()
+            if self._focus_prev:
+                if self._focus_prev.get('side_visible', True):
+                    self.side_panel.show()
+                else:
+                    self.side_panel.hide()
+                if self._focus_prev.get('editor_visible', True):
+                    self.editor_container.show()
+                else:
+                    self.editor_container.hide()
+                if self._focus_prev.get('preview_visible', True):
+                    self.preview_container.show()
+                else:
+                    self.preview_container.hide()
+                sizes = self._focus_prev.get('splitter_sizes')
+                if sizes:
+                    self.splitter.setSizes(sizes)
+                if self._focus_prev.get('menu_visible', True):
+                    self.menuBar().show()
+                else:
+                    self.menuBar().hide()
+                if self._focus_prev.get('status_visible', True):
+                    self.statusBar().show()
+                else:
+                    self.statusBar().hide()
+                if self._focus_prev.get('toolbar_visible', True):
+                    self.findChild(QToolBar).show()
+                else:
+                    self.findChild(QToolBar).hide()
+            else:
+                self.side_panel.show()
+                self.editor_container.show()
+                self.preview_container.show()
+                self.menuBar().show()
+                self.statusBar().show()
+                self.findChild(QToolBar).show()
             
             self.setStyleSheet(self._normal_style)
             self.showNormal()

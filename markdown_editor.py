@@ -34,6 +34,7 @@ from PyQt6.QtGui import (
     QColor, QTextCursor, QShortcut, QTextDocument, QFileSystemModel
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEnginePage
 from PyQt6.QtWebChannel import QWebChannel
 
 import markdown
@@ -2173,6 +2174,7 @@ class MarkdownEditor(QMainWindow):
         pl.setContentsMargins(5, 5, 5, 5)
         
         self.preview = QWebEngineView()
+        self.preview.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         pl.addWidget(self.preview)
         
         self.preview_container = preview_w
@@ -2298,12 +2300,12 @@ class MarkdownEditor(QMainWindow):
         
         copy = QAction("복사", self)
         copy.setShortcut(QKeySequence.StandardKey.Copy)
-        copy.triggered.connect(self.editor.copy)
+        copy.triggered.connect(self.handle_copy)
         edit_menu.addAction(copy)
         
         paste = QAction("붙여넣기", self)
         paste.setShortcut(QKeySequence.StandardKey.Paste)
-        paste.triggered.connect(self.editor.paste)
+        paste.triggered.connect(self.handle_paste)
         edit_menu.addAction(paste)
         
         edit_menu.addSeparator()
@@ -2576,6 +2578,28 @@ class MarkdownEditor(QMainWindow):
         cursor = self.editor.textCursor()
         self.pos_label.setText(f"줄: {cursor.blockNumber()+1}, 열: {cursor.columnNumber()+1}")
     
+    def _is_preview_focused(self):
+        focused = QApplication.focusWidget()
+        if not focused:
+            return self.preview.hasFocus()
+        return focused == self.preview or self.preview.isAncestorOf(focused) or self.preview.hasFocus()
+
+    def handle_copy(self):
+        if self._is_preview_focused():
+            self.preview.triggerPageAction(QWebEnginePage.WebAction.Copy)
+            return
+        self.editor.copy()
+
+    def handle_paste(self):
+        if self.focus_mode:
+            self.status_bar.showMessage("포커스 모드에서는 붙여넣기를 사용할 수 없습니다.", 2000)
+            return
+        if self._is_preview_focused():
+            self.editor.setFocus()
+            self.editor.paste()
+            return
+        self.editor.paste()
+
     def update_preview(self):
         text = self.editor.toPlainText()
         
@@ -2623,6 +2647,47 @@ function setScroll(percent) {{
     var h = document.documentElement.scrollHeight - window.innerHeight;
     window.scrollTo(0, percent * h);
 }}
+
+function addCodeCopyButtons() {{
+    const blocks = document.querySelectorAll('pre');
+    blocks.forEach((pre) => {{
+        if (!pre.parentElement || pre.closest('.code-block-wrap')) {{
+            return;
+        }}
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'code-block-wrap';
+        pre.parentElement.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'code-copy-btn';
+        button.textContent = 'Copy';
+
+        button.addEventListener('click', async () => {{
+            const codeText = pre.innerText.replace(/\\n$/, '');
+            try {{
+                await navigator.clipboard.writeText(codeText);
+            }} catch (err) {{
+                const textarea = document.createElement('textarea');
+                textarea.value = codeText;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            }}
+
+            const oldLabel = button.textContent;
+            button.textContent = 'Copied';
+            setTimeout(() => {{
+                button.textContent = oldLabel;
+            }}, 1200);
+        }});
+
+        wrapper.appendChild(button);
+    }});
+}}
 </script>
 <script type="text/javascript" id="MathJax-script" async
   src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js">
@@ -2637,6 +2702,24 @@ h2 {{ font-size: 1.5em; border-bottom: 1px solid {code_bg}; padding-bottom: 0.3e
 code {{ background: {code_bg}; padding: 0.2em 0.4em; border-radius: 3px; font-family: 'Consolas', monospace; font-size: 0.9em; }}
 pre {{ background: {code_bg}; padding: 16px; border-radius: 8px; overflow-x: auto; }}
 pre code {{ background: none; padding: 0; }}
+.code-block-wrap {{ position: relative; margin: 1em 0; }}
+.code-block-wrap pre {{ margin: 0; padding-top: 40px; }}
+.code-copy-btn {{
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    border: 1px solid {"#666" if self.dark_mode else "#cfd3d8"};
+    background: {"#3a3a3a" if self.dark_mode else "#ffffff"};
+    color: {fg};
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: 'Consolas', monospace;
+    cursor: pointer;
+}}
+.code-copy-btn:hover {{
+    background: {"#4a4a4a" if self.dark_mode else "#f0f3f6"};
+}}
 blockquote {{ border-left: 4px solid #007AFF; margin: 1em 0; padding: 0.5em 1em; background: {code_bg}; border-radius: 0 8px 8px 0; }}
 table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
 th, td {{ border: 1px solid {"#444" if self.dark_mode else "#ddd"}; padding: 10px 14px; text-align: left; }}
@@ -2653,6 +2736,9 @@ input[type="checkbox"] {{ margin-right: 8px; }}
 {custom_css}
 </style></head><body>
 {html_content}
+<script>
+addCodeCopyButtons();
+</script>
 <script type="module">
 import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 

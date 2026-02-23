@@ -863,6 +863,10 @@ class WebBridge(QObject):
     def receivePng(self, data):
         self.png_ready.emit(data)
 
+    @pyqtSlot(str)
+    def copyText(self, data):
+        QApplication.clipboard().setText(data or "")
+
 
 class DocumentStats:
     """문서 통계 계산"""
@@ -2175,6 +2179,10 @@ class MarkdownEditor(QMainWindow):
         
         self.preview = QWebEngineView()
         self.preview.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.preview_bridge = WebBridge()
+        self.preview_channel = QWebChannel()
+        self.preview_channel.registerObject("bridge", self.preview_bridge)
+        self.preview.page().setWebChannel(self.preview_channel)
         pl.addWidget(self.preview)
         
         self.preview_container = preview_w
@@ -2633,6 +2641,7 @@ class MarkdownEditor(QMainWindow):
         
         html = f'''<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script>
 MathJax = {{
   tex: {{
@@ -2646,6 +2655,17 @@ MathJax = {{
 function setScroll(percent) {{
     var h = document.documentElement.scrollHeight - window.innerHeight;
     window.scrollTo(0, percent * h);
+}}
+
+let bridge = null;
+
+function initWebBridge() {{
+    if (typeof qt === 'undefined' || !qt.webChannelTransport) {{
+        return;
+    }}
+    new QWebChannel(qt.webChannelTransport, function(channel) {{
+        bridge = channel.objects.bridge;
+    }});
 }}
 
 function addCodeCopyButtons() {{
@@ -2665,17 +2685,25 @@ function addCodeCopyButtons() {{
         button.className = 'code-copy-btn';
         button.textContent = 'Copy';
 
-        button.addEventListener('click', async () => {{
+        button.addEventListener('click', () => {{
             const codeText = pre.innerText.replace(/\\n$/, '');
-            try {{
-                await navigator.clipboard.writeText(codeText);
-            }} catch (err) {{
-                const textarea = document.createElement('textarea');
-                textarea.value = codeText;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
+            if (bridge && typeof bridge.copyText === 'function') {{
+                bridge.copyText(codeText);
+            }} else {{
+                try {{
+                    const textarea = document.createElement('textarea');
+                    textarea.value = codeText;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }} catch (err) {{
+                    button.textContent = 'Failed';
+                    setTimeout(() => {{
+                        button.textContent = 'Copy';
+                    }}, 1200);
+                    return;
+                }}
             }}
 
             const oldLabel = button.textContent;
@@ -2737,6 +2765,7 @@ input[type="checkbox"] {{ margin-right: 8px; }}
 </style></head><body>
 {html_content}
 <script>
+initWebBridge();
 addCodeCopyButtons();
 </script>
 <script type="module">

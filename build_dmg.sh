@@ -111,6 +111,51 @@ fi
 echo "🔨 앱 빌드 중..."
 python setup.py py2app
 
+
+# ===== 5-1. libffi 런타임 보강 (py2app Launch error 방지) =====
+echo "🧩 libffi 런타임 확인/복사 중..."
+APP_FRAMEWORKS="dist/${APP_NAME}.app/Contents/Frameworks"
+mkdir -p "$APP_FRAMEWORKS"
+
+LIBFFI_SRC=""
+# 1) brew 기본 경로
+if [ -f "/opt/homebrew/opt/libffi/lib/libffi.8.dylib" ]; then
+    LIBFFI_SRC="/opt/homebrew/opt/libffi/lib/libffi.8.dylib"
+elif [ -f "/usr/local/opt/libffi/lib/libffi.8.dylib" ]; then
+    LIBFFI_SRC="/usr/local/opt/libffi/lib/libffi.8.dylib"
+fi
+
+# 2) 현재 빌드 파이썬(base_prefix) 기반 탐색 (conda/venv 대응)
+if [ -z "$LIBFFI_SRC" ]; then
+    LIBFFI_SRC=$(python - <<'PYF'
+import sys,glob,os
+candidates=[]
+for root in [sys.base_prefix, sys.prefix]:
+    if root and os.path.exists(root):
+        candidates += glob.glob(os.path.join(root, '**', 'libffi.8.dylib'), recursive=True)
+print(candidates[0] if candidates else '')
+PYF
+)
+fi
+
+# 3) 최후 fallback
+if [ -z "$LIBFFI_SRC" ]; then
+    LIBFFI_SRC=$(find /opt/homebrew /usr/local /Users/$(whoami) -name "libffi.8.dylib" 2>/dev/null | head -n 1 || true)
+fi
+
+
+if [ -n "$LIBFFI_SRC" ] && [ -f "$LIBFFI_SRC" ]; then
+    cp -f "$LIBFFI_SRC" "$APP_FRAMEWORKS/libffi.8.dylib"
+    # py2app의 _ctypes 상대 경로 대응용 복사
+    PY_LIB_DIR=$(find "dist/${APP_NAME}.app/Contents/Resources/lib" -maxdepth 2 -type d -name "python*" 2>/dev/null | head -n 1 || true)
+    if [ -n "$PY_LIB_DIR" ]; then
+        cp -f "$LIBFFI_SRC" "$PY_LIB_DIR/libffi.8.dylib" || true
+    fi
+    echo "✅ libffi 복사 완료: $LIBFFI_SRC"
+else
+    echo "⚠️  libffi.8.dylib를 찾지 못했습니다. 앱 실행 시 Launch error가 날 수 있습니다."
+fi
+
 # 빌드 확인
 if [ ! -d "dist/${APP_NAME}.app" ]; then
     echo "❌ 앱 빌드 실패!"
@@ -175,52 +220,9 @@ README
 
 # DMG 생성
 if command -v hdiutil &> /dev/null; then
-    # 임시 DMG 생성
-    hdiutil create -volname "$APP_NAME" \
-                   -srcfolder "$DMG_DIR" \
-                   -ov -format UDRW \
-                   "dist/${DMG_NAME}_temp.dmg"
-    
-    # 마운트
-    MOUNT_DIR=$(hdiutil attach "dist/${DMG_NAME}_temp.dmg" | grep Volumes | awk '{print $3}')
-    
-    # 배경 및 아이콘 위치 설정 (AppleScript)
-    if [ -n "$MOUNT_DIR" ]; then
-        osascript << APPLESCRIPT
-tell application "Finder"
-    tell disk "$APP_NAME"
-        open
-        set current view of container window to icon view
-        set toolbar visible of container window to false
-        set statusbar visible of container window to false
-        set bounds of container window to {400, 100, 900, 450}
-        set viewOptions to the icon view options of container window
-        set arrangement of viewOptions to not arranged
-        set icon size of viewOptions to 80
-        set position of item "${APP_NAME}.app" of container window to {130, 180}
-        set position of item "Applications" of container window to {380, 180}
-        set position of item "README.txt" of container window to {250, 320}
-        close
-        open
-        update without registering applications
-        delay 2
-    end tell
-end tell
-APPLESCRIPT
-        
-        # 동기화 및 언마운트
-        sync
-        hdiutil detach "$MOUNT_DIR"
-    fi
-    
-    # 최종 압축 DMG
-    hdiutil convert "dist/${DMG_NAME}_temp.dmg" \
-                    -format UDZO \
-                    -imagekey zlib-level=9 \
-                    -o "dist/${DMG_NAME}.dmg"
-    
-    rm -f "dist/${DMG_NAME}_temp.dmg"
-    
+    # 안정 모드: 마운트/AppleScript 단계 없이 바로 압축 DMG 생성
+    hdiutil create -volname "$APP_NAME"                    -srcfolder "$DMG_DIR"                    -ov -format UDZO                    -imagekey zlib-level=9                    "dist/${DMG_NAME}.dmg"
+
     echo "✅ DMG 생성 완료: dist/${DMG_NAME}.dmg"
 else
     # hdiutil 없으면 ZIP으로 대체

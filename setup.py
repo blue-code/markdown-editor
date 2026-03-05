@@ -4,8 +4,16 @@ py2app 설정 파일 - MarkdownPro macOS 앱 빌드
 """
 
 from setuptools import setup
+import os
 
 APP = ['markdown_editor.py']
+
+LIBFFI_CANDIDATES = [
+    '/opt/homebrew/opt/libffi/lib/libffi.8.dylib',
+    '/usr/local/opt/libffi/lib/libffi.8.dylib',
+]
+LIBFFI_FRAMEWORKS = [p for p in LIBFFI_CANDIDATES if os.path.exists(p)]
+
 DATA_FILES = ['icon.ico']
 
 OPTIONS = {
@@ -61,8 +69,14 @@ OPTIONS = {
         'markdown.extensions.toc',
         'markdown.extensions.nl2br',
         'markdown.extensions.sane_lists',
+        'importlib.util',
+        'importlib',
+        'html.entities',
+        'html.parser',
+        'html',
     ],
     'excludes': ['tkinter', 'test'],
+    'frameworks': LIBFFI_FRAMEWORKS,
     'resources': ['icon.ico'],
 }
 

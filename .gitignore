@@ -4,3 +4,4 @@ dist/
 build/
 *.swp
 *.spec
+.DS_Store

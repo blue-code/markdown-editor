@@ -44,6 +44,41 @@ from mermaid_utils import extract_mermaid_blocks
 CONFIG_FILE = os.path.expanduser("~/.markdownpro_config.json")
 BACKUP_DIR = os.path.expanduser("~/.markdownpro_backups")
 SNIPPETS_FILE = os.path.expanduser("~/.markdownpro_snippets.json")
+DRAFT_FILE = os.path.expanduser("~/.markdownpro_draft.json")
+
+
+# ============== 리소스 경로 헬퍼 ==============
+# PyInstaller(_MEIPASS), py2app(RESOURCEPATH), 일반 실행을 모두 지원
+def _resource_root():
+    if hasattr(sys, "_MEIPASS"):  # PyInstaller
+        return sys._MEIPASS
+    if "RESOURCEPATH" in os.environ:  # py2app
+        return os.environ["RESOURCEPATH"]
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def asset_path(*parts):
+    return os.path.join(_resource_root(), "assets", *parts)
+
+
+def asset_file_url(*parts):
+    # QtWebEngine 의 setHtml baseUrl / script src 용 file:// URL
+    return QUrl.fromLocalFile(asset_path(*parts)).toString()
+
+
+# 번들된 Mermaid UMD 경로 (오프라인 동작 보장)
+MERMAID_VERSION = "11.14.0"
+MERMAID_LOCAL_URL = asset_file_url("mermaid", "mermaid.min.js")
+MERMAID_BASE_URL = QUrl.fromLocalFile(asset_path("mermaid") + os.sep)
+MERMAID_CDN_URL = f"https://cdn.jsdelivr.net/npm/mermaid@{MERMAID_VERSION}/dist/mermaid.min.js"
+
+# 번들된 MathJax 풀번들 (SVG 폰트 인라인 — 단일 파일로 오프라인 완전 동작)
+MATHJAX_VERSION = "3.2.2"
+MATHJAX_LOCAL_URL = asset_file_url("mathjax", "tex-svg-full.js")
+MATHJAX_CDN_URL = f"https://cdn.jsdelivr.net/npm/mathjax@{MATHJAX_VERSION}/es5/tex-svg-full.js"
+
+# 미리보기 baseUrl — assets 루트로 두면 mermaid/mathjax 둘 다 같은 출처에서 로드
+ASSETS_BASE_URL = QUrl.fromLocalFile(asset_path("") + os.sep)
 
 # 스타일
 LIGHT_STYLE = """
@@ -854,11 +889,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 class WebBridge(QObject):
     svg_ready = pyqtSignal(str)
     png_ready = pyqtSignal(str)
-    
+    open_mermaid_requested = pyqtSignal(int)  # 미리보기 → 뷰어 열기 (인덱스 전달)
+    zoom_changed_from_js = pyqtSignal(int)    # 뷰어 휠 줌 → 슬라이더 동기화
+
     @pyqtSlot(str)
     def receiveSvg(self, data):
         self.svg_ready.emit(data)
-    
+
     @pyqtSlot(str)
     def receivePng(self, data):
         self.png_ready.emit(data)
@@ -866,6 +903,14 @@ class WebBridge(QObject):
     @pyqtSlot(str)
     def copyText(self, data):
         QApplication.clipboard().setText(data or "")
+
+    @pyqtSlot(int)
+    def openMermaid(self, idx):
+        self.open_mermaid_requested.emit(int(idx))
+
+    @pyqtSlot(int)
+    def setZoomFromJs(self, percent):
+        self.zoom_changed_from_js.emit(int(percent))
 
 
 class DocumentStats:
@@ -1389,9 +1434,26 @@ class MermaidViewer(QMainWindow):
         self.bridge = WebBridge()
         self.bridge.svg_ready.connect(self.save_svg_data)
         self.bridge.png_ready.connect(self.save_png_data)
+        self.bridge.zoom_changed_from_js.connect(self.on_zoom_from_js)
         self.pending_save_path = None
         self.setup_ui()
+        self._setup_shortcuts()
         self.set_mermaid_blocks(self.mermaid_blocks, self.current_index, fallback_code=self.mermaid_code)
+
+    def _setup_shortcuts(self):
+        # 뷰어 전용 단축키 — 마우스 없이 키보드만으로 조작 가능
+        for keys, slot in [
+            ("Left",     self.prev_diagram),
+            ("Right",    self.next_diagram),
+            ("0",        lambda: self.zoom_slider.setValue(100)),
+            ("F",        self.fit_to_view),
+            ("Escape",   self.close),
+            ("F11",      self.toggle_fullscreen),
+            ("Ctrl++",   self.zoom_in),
+            ("Ctrl+=",   self.zoom_in),
+            ("Ctrl+-",   self.zoom_out),
+        ]:
+            QShortcut(QKeySequence(keys), self, slot)
     
     def setup_ui(self):
         self.setWindowTitle("Mermaid 다이어그램 뷰어")
@@ -1557,18 +1619,23 @@ class MermaidViewer(QMainWindow):
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
-html,body{{width:100%;height:100%;overflow:auto;background:{bg}}}
-#container{{display:flex;justify-content:center;align-items:center;min-height:100%;padding:30px}}
-#diagram{{transform-origin:center;transition:transform 0.15s ease-out}}
+html,body{{width:100%;height:100%;overflow:hidden;background:{bg}}}
+#container{{
+    display:flex;justify-content:center;align-items:center;
+    width:100%;height:100%;padding:30px;
+    cursor:grab;user-select:none;-webkit-user-select:none;
+    overflow:hidden;
+}}
+#container.dragging{{cursor:grabbing}}
+#diagram{{transform-origin:center center;will-change:transform}}
 .mermaid{{background:transparent}}
 </style></head><body>
 <div id="container"><div id="diagram" class="mermaid">
 {self.mermaid_code}
 </div></div>
 
-<script type="module">
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-
+<script src="{MERMAID_LOCAL_URL}"></script>
+<script>
 mermaid.initialize({{
   startOnLoad: false,
   theme: '{theme}',
@@ -1582,64 +1649,128 @@ mermaid.initialize({{
   sankey: {{ useMaxWidth: false }},
 }});
 
-await mermaid.run({{
-    querySelector: '.mermaid'
-}});
+mermaid.run({{ querySelector: '.mermaid' }});
 </script>
 
 <script>
 var bridge = null;
 new QWebChannel(qt.webChannelTransport, function(c) {{ bridge = c.objects.bridge; }});
 
-function setZoom(s) {{
-    var el = document.getElementById('diagram');
-    if(el) el.style.transform = 'scale(' + (s/100) + ')';
+// ===== 변환 상태 (translate + scale) =====
+var tx = 0, ty = 0, s = 1;
+var MIN_S = 0.1, MAX_S = 5.0;
+
+function applyTransform() {{
+    var d = document.getElementById('diagram');
+    if (d) d.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
 }}
 
+function notifyZoom() {{
+    if (bridge && typeof bridge.setZoomFromJs === 'function') {{
+        bridge.setZoomFromJs(Math.round(s * 100));
+    }}
+}}
+
+// 슬라이더(파이썬) → 뷰
+function setZoom(percent) {{
+    s = Math.max(MIN_S, Math.min(MAX_S, percent / 100));
+    applyTransform();
+}}
+
+// 마우스 휠: Ctrl+휠 = 커서 기준 확대/축소, 일반 휠 = 세로/가로 패닝
+(function() {{
+    var c = document.getElementById('container');
+    c.addEventListener('wheel', function(e) {{
+        e.preventDefault();
+        if (e.ctrlKey || e.metaKey) {{
+            // 줌
+            var d = document.getElementById('diagram');
+            var rect = d.getBoundingClientRect();
+            var cx = rect.left + rect.width / 2;
+            var cy = rect.top + rect.height / 2;
+            var factor = Math.exp(-e.deltaY * 0.0015);
+            var newS = Math.max(MIN_S, Math.min(MAX_S, s * factor));
+            var f = newS / s;
+            var dx = e.clientX - cx;
+            var dy = e.clientY - cy;
+            tx -= dx * (f - 1);
+            ty -= dy * (f - 1);
+            s = newS;
+            applyTransform();
+            notifyZoom();
+        }} else {{
+            // 패닝: shift+휠 = 가로, 그냥 휠 = 세로 (deltaX 도 함께 반영)
+            if (e.shiftKey) {{
+                tx -= e.deltaY;
+            }} else {{
+                tx -= e.deltaX;
+                ty -= e.deltaY;
+            }}
+            applyTransform();
+        }}
+    }}, {{ passive: false }});
+
+    // 더블클릭: fit ↔ 1:1 토글 (이전 줌 기억)
+    var lastFitZoom = null;
+    c.addEventListener('dblclick', function(e) {{
+        // 100% 가까우면 fit, 아니면 1:1 로
+        if (Math.abs(s - 1) < 0.02) {{
+            fitToView();
+        }} else {{
+            tx = 0; ty = 0; s = 1;
+            applyTransform();
+        }}
+        notifyZoom();
+    }});
+
+    // 마우스 드래그 팬
+    var dragging = false;
+    var startX = 0, startY = 0, startTx = 0, startTy = 0;
+    c.addEventListener('pointerdown', function(e) {{
+        if (e.button !== 0) return;  // 좌클릭만
+        dragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        startTx = tx;
+        startTy = ty;
+        c.classList.add('dragging');
+        c.setPointerCapture(e.pointerId);
+    }});
+    c.addEventListener('pointermove', function(e) {{
+        if (!dragging) return;
+        tx = startTx + (e.clientX - startX);
+        ty = startTy + (e.clientY - startY);
+        applyTransform();
+    }});
+    function endDrag(e) {{
+        if (!dragging) return;
+        dragging = false;
+        c.classList.remove('dragging');
+        try {{ c.releasePointerCapture(e.pointerId); }} catch(_) {{}}
+    }}
+    c.addEventListener('pointerup', endDrag);
+    c.addEventListener('pointercancel', endDrag);
+    c.addEventListener('pointerleave', endDrag);
+}})();
+
 function fitToView() {{
-  var c = document.getElementById('container');
-  var d = document.getElementById('diagram');
-  var svg = d.querySelector('svg');
-  if (svg) {{
-    var rect = svg.getBoundingClientRect();
-    // Use natural metrics if possible, but getBoundingClientRect respects transform
-    // We want the scale relative to 100%
-    // If current scale is not 1, rect is scaled.
-    // Let's assume we want to fit *whatever* is there to the container.
-    var sw = rect.width;
-    var sh = rect.height;
-    
-    // Adjust for current scale to get "original" size approximation? 
-    // Actually, if we just want to fit 'rect' into 'c', we calculate the ratio.
-    // But if we are already zoomed in, sw is large.
-    // It's safer to rely on the current visual check.
-    
+    // 팬 리셋 후 컨테이너에 딱 맞도록 scale 재계산
+    var c = document.getElementById('container');
+    var d = document.getElementById('diagram');
+    var svg = d ? d.querySelector('svg') : null;
+    if (!svg) return 100;
+    // 현재 변환을 잠시 제거하여 자연 크기를 측정
+    var prev = d.style.transform;
+    d.style.transform = 'translate(0,0) scale(1)';
+    var nat = svg.getBoundingClientRect();
+    d.style.transform = prev;
     var cw = c.clientWidth - 60;
     var ch = c.clientHeight - 60;
-    
-    // To properly reset, we might want to unzoom first or calculate taking current transform into account.
-    // But for simplicity, we find the factor that makes (sw, sh) fit into (cw, ch).
-    // New Scale = Current Scale * (Target / Current)
-    // We don't have easy access to Current Scale variable in JS here unless we track it.
-    // But we know 'sw' is the current width.
-    var scale = Math.min(cw/sw, ch/sh) * 100;
-    
-    // If we multiply by current scale? No, this 'scale' is a multiplier for the *current* size.
-    // But our Python side slider sets absolute scale.
-    // So we need to return the *absolute* scale value (0-500).
-    
-    // Let's try to get current transform scale
-    var currentScale = 1;
-    var match = d.style.transform.match(/scale\\\\(([^)]+)\\\\)/);
-    if (match) currentScale = parseFloat(match[1]);
-    
-    var finalScale = currentScale * scale;
-    
-    // clamp
-    finalScale = Math.min(Math.max(finalScale, 10), 500);
-    return Math.round(finalScale);
-  }}
-  return 100;
+    var ns = Math.min(cw / nat.width, ch / nat.height);
+    ns = Math.max(MIN_S, Math.min(MAX_S, ns));
+    tx = 0; ty = 0; s = ns;
+    applyTransform();
+    return Math.round(s * 100);
 }}
 
 function exportSVG() {{
@@ -1675,12 +1806,22 @@ function exportPNG(scale) {{
   }}
 }}
 </script></body></html>'''
-        self.web_view.setHtml(html, QUrl("https://cdn.jsdelivr.net/"))
+        # baseUrl 을 로컬 file:// 로 두면 같은 출처 정책상 번들된 mermaid.min.js 를 로드 가능
+        self.web_view.setHtml(html, MERMAID_BASE_URL)
     
     def on_zoom_changed(self, value):
         self.zoom_level = value
         self.zoom_label.setText(f"{value}%")
         self.web_view.page().runJavaScript(f"setZoom({value})")
+
+    def on_zoom_from_js(self, percent):
+        # 휠 줌 → 슬라이더 동기화. 슬라이더 시그널을 막아 재진입 방지.
+        percent = max(self.zoom_slider.minimum(), min(self.zoom_slider.maximum(), int(percent)))
+        self.zoom_level = percent
+        self.zoom_label.setText(f"{percent}%")
+        self.zoom_slider.blockSignals(True)
+        self.zoom_slider.setValue(percent)
+        self.zoom_slider.blockSignals(False)
     
     def zoom_in(self):
         self.zoom_slider.setValue(min(self.zoom_level + 25, 500))
@@ -2039,6 +2180,13 @@ class MarkdownEditor(QMainWindow):
         self._external_prompt_active = False
         self._focus_prev = {}
         self.file_check_timer = QTimer()
+        # 동기 스크롤 — 토글 + 디바운스
+        self.sync_scroll_enabled = True
+        self._sync_scroll_timer = QTimer()
+        self._sync_scroll_timer.setSingleShot(True)
+        self._sync_scroll_timer.setInterval(40)
+        self._sync_scroll_timer.timeout.connect(self._do_sync_scroll)
+        self._pending_sync_value = 0
         
         self.load_settings()
         self.load_snippets()
@@ -2064,9 +2212,10 @@ class MarkdownEditor(QMainWindow):
                     self.recent_files = cfg.get('recent_files', [])
                     self.word_goal = cfg.get('word_goal', 0)
                     self.custom_css_path = cfg.get('custom_css_path', "")
+                    self.sync_scroll_enabled = cfg.get('sync_scroll', True)
         except:
             pass
-    
+
     def save_settings(self):
         try:
             with open(CONFIG_FILE, 'w') as f:
@@ -2075,6 +2224,7 @@ class MarkdownEditor(QMainWindow):
                     'recent_files': self.recent_files[:10],
                     'word_goal': self.word_goal,
                     'custom_css_path': self.custom_css_path,
+                    'sync_scroll': self.sync_scroll_enabled,
                 }, f)
         except:
             pass
@@ -2149,6 +2299,12 @@ class MarkdownEditor(QMainWindow):
         self.editor.textChanged.connect(self.on_text_changed)
         self.editor.cursorPositionChanged.connect(self.update_cursor_pos)
         self.editor.verticalScrollBar().valueChanged.connect(self.sync_scroll)
+
+        # 우클릭 컨텍스트 메뉴 — mermaid 블록일 때 뷰어/코드 복사 항목 추가
+        self.editor.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.editor.customContextMenuRequested.connect(self._on_editor_context_menu)
+        self.editor.setAcceptDrops(False)  # 드롭은 메인 윈도우에서 받음 (이미지 핸들링용)
+        self.setAcceptDrops(True)
         
         # 탭 키 처리 (스니펫)
         self.editor.installEventFilter(self)
@@ -2180,6 +2336,7 @@ class MarkdownEditor(QMainWindow):
         self.preview = QWebEngineView()
         self.preview.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.preview_bridge = WebBridge()
+        self.preview_bridge.open_mermaid_requested.connect(self.open_mermaid_viewer_at)
         self.preview_channel = QWebChannel()
         self.preview_channel.registerObject("bridge", self.preview_bridge)
         self.preview.page().setWebChannel(self.preview_channel)
@@ -2404,7 +2561,13 @@ class MarkdownEditor(QMainWindow):
         self.sidebar_act.setChecked(True)
         self.sidebar_act.triggered.connect(self.toggle_sidebar)
         view_menu.addAction(self.sidebar_act)
-        
+
+        self.sync_scroll_act = QAction("동기 스크롤", self)
+        self.sync_scroll_act.setCheckable(True)
+        self.sync_scroll_act.setChecked(self.sync_scroll_enabled)
+        self.sync_scroll_act.triggered.connect(lambda v: self.toggle_sync_scroll(v))
+        view_menu.addAction(self.sync_scroll_act)
+
         view_menu.addSeparator()
         
         self.focus_act = QAction("🎯 포커스 모드", self)
@@ -2523,8 +2686,9 @@ class MarkdownEditor(QMainWindow):
             s.activated.connect(cb)
     
     def setup_auto_save(self):
+        # 30초마다 자동 저장 — 디스크 파일은 평소대로, 미저장 버퍼는 DRAFT_FILE 로 보존
         self.auto_save_timer.timeout.connect(self.auto_save)
-        self.auto_save_timer.start(60000)
+        self.auto_save_timer.start(30000)
 
     def setup_file_check(self):
         self.file_check_timer.timeout.connect(self.check_external_file_change)
@@ -2573,14 +2737,25 @@ class MarkdownEditor(QMainWindow):
             self.goal_progress.hide()
     
     def sync_scroll(self, value):
-        if not self.preview.isVisible():
+        # 디바운스 — 매 스크롤 이벤트마다 JS 호출하지 않도록
+        if not self.sync_scroll_enabled or not self.preview.isVisible():
             return
-            
+        self._pending_sync_value = value
+        if not self._sync_scroll_timer.isActive():
+            self._sync_scroll_timer.start()
+
+    def _do_sync_scroll(self):
         scrollbar = self.editor.verticalScrollBar()
         max_val = scrollbar.maximum()
         if max_val > 0:
-            percent = value / max_val
+            percent = self._pending_sync_value / max_val
             self.preview.page().runJavaScript(f"setScroll({percent})")
+
+    def toggle_sync_scroll(self, enabled=None):
+        self.sync_scroll_enabled = (not self.sync_scroll_enabled) if enabled is None else bool(enabled)
+        msg = "동기 스크롤 켜짐" if self.sync_scroll_enabled else "동기 스크롤 꺼짐"
+        self.status_bar.showMessage(msg, 2000)
+        self.save_settings()
 
     def update_cursor_pos(self):
         cursor = self.editor.textCursor()
@@ -2716,9 +2891,38 @@ function addCodeCopyButtons() {{
         wrapper.appendChild(button);
     }});
 }}
+
+function wrapMermaidBlocks() {{
+    // mermaid.run 이전에 .mermaid 블록을 감싸 오버레이 버튼을 부착.
+    // mermaid 는 .mermaid 의 innerHTML 만 바꾸므로 wrap/button 은 그대로 살아남는다.
+    const blocks = document.querySelectorAll('.mermaid');
+    blocks.forEach((el, idx) => {{
+        if (el.parentElement && el.parentElement.classList.contains('mermaid-wrap')) {{
+            return;
+        }}
+        const wrap = document.createElement('div');
+        wrap.className = 'mermaid-wrap';
+        wrap.dataset.idx = String(idx);
+        el.parentNode.insertBefore(wrap, el);
+        wrap.appendChild(el);
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'mermaid-fullview-btn';
+        btn.textContent = '⛶ 전체보기';
+        btn.title = '전체 화면 뷰어로 열기';
+        btn.addEventListener('click', () => {{
+            const i = parseInt(wrap.dataset.idx || '0', 10);
+            if (bridge && typeof bridge.openMermaid === 'function') {{
+                bridge.openMermaid(i);
+            }}
+        }});
+        wrap.appendChild(btn);
+    }});
+}}
 </script>
 <script type="text/javascript" id="MathJax-script" async
-  src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js">
+  src="{MATHJAX_LOCAL_URL}">
 </script>
 <style>
 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
@@ -2759,7 +2963,28 @@ a:hover {{ text-decoration: underline; }}
 ul, ol {{ padding-left: 2em; }}
 li {{ margin: 0.3em 0; }}
 hr {{ border: none; border-top: 1px solid {code_bg}; margin: 2em 0; }}
-.mermaid {{ background: transparent; text-align: center; margin: 1em 0; }}
+.mermaid {{ background: transparent; text-align: center; margin: 0; }}
+.mermaid-wrap {{ position: relative; margin: 1em 0; }}
+.mermaid-fullview-btn {{
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 10;
+    border: 1px solid {"#666" if self.dark_mode else "#cfd3d8"};
+    background: {"rgba(58,58,58,0.85)" if self.dark_mode else "rgba(255,255,255,0.92)"};
+    color: {fg};
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.15s ease, background 0.15s ease;
+}}
+.mermaid-wrap:hover .mermaid-fullview-btn {{ opacity: 1; }}
+.mermaid-fullview-btn:hover {{
+    background: {"#4a4a4a" if self.dark_mode else "#f0f3f6"};
+}}
 input[type="checkbox"] {{ margin-right: 8px; }}
 {custom_css}
 </style></head><body>
@@ -2767,23 +2992,22 @@ input[type="checkbox"] {{ margin-right: 8px; }}
 <script>
 initWebBridge();
 addCodeCopyButtons();
+wrapMermaidBlocks();
 </script>
-<script type="module">
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-
+<script src="{MERMAID_LOCAL_URL}"></script>
+<script>
 mermaid.initialize({{
   startOnLoad: false,
   theme: '{theme}',
   securityLevel: 'loose'
 }});
 
-await mermaid.run({{
-    querySelector: '.mermaid'
-}});
+mermaid.run({{ querySelector: '.mermaid' }});
 </script>
 </body></html>'''
-        
-        self.preview.setHtml(html, QUrl("https://cdn.jsdelivr.net/"))
+
+        # baseUrl 을 로컬 file:// 로 두면 같은 출처 정책상 번들된 mermaid.min.js 를 로드 가능
+        self.preview.setHtml(html, MERMAID_BASE_URL)
     
     def update_recent_menu(self):
         self.recent_menu.clear()
@@ -2824,6 +3048,7 @@ await mermaid.run({{
             self.is_modified = False
             self._disk_state = None
             self.update_title()
+            self._clear_draft()
     
     def open_file(self, path=None):
         if not self.check_save():
@@ -2843,6 +3068,7 @@ await mermaid.run({{
                 self._disk_state = self._get_disk_state(path)
                 self.update_title()
                 self.add_to_recent(path)
+                self._clear_draft()
             except Exception as e:
                 QMessageBox.critical(self, "오류", str(e))
             finally:
@@ -2870,14 +3096,72 @@ await mermaid.run({{
             self.update_title()
             self.add_to_recent(path)
             self.status_bar.showMessage(f"저장됨: {path}", 3000)
+            self._clear_draft()
         except Exception as e:
             QMessageBox.critical(self, "오류", str(e))
         finally:
             self._suspend_file_check = False
     
     def auto_save(self):
+        # 1) 디스크 파일이 있으면 평소대로 저장
         if self.current_file and self.is_modified:
             self._save(self.current_file)
+        # 2) 미저장 (untitled) 이거나 변경 사항이 있으면 드래프트로 따로 보존
+        if self.is_modified:
+            self._write_draft()
+        else:
+            self._clear_draft()
+
+    def _write_draft(self):
+        try:
+            payload = {
+                "saved_at": datetime.now().isoformat(timespec="seconds"),
+                "current_file": self.current_file,
+                "content": self.editor.toPlainText(),
+            }
+            with open(DRAFT_FILE, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+        except Exception:
+            pass
+
+    def _clear_draft(self):
+        try:
+            if os.path.exists(DRAFT_FILE):
+                os.remove(DRAFT_FILE)
+        except Exception:
+            pass
+
+    def _maybe_recover_draft(self):
+        # 시작 시 호출. 드래프트가 있으면 사용자에게 복구 여부 확인.
+        if not os.path.exists(DRAFT_FILE):
+            return
+        try:
+            with open(DRAFT_FILE, "r", encoding="utf-8") as f:
+                draft = json.load(f)
+        except Exception:
+            self._clear_draft()
+            return
+        content = draft.get("content", "")
+        if not content.strip():
+            self._clear_draft()
+            return
+        saved_at = draft.get("saved_at", "?")
+        target = draft.get("current_file") or "(제목 없음)"
+        reply = QMessageBox.question(
+            self,
+            "드래프트 복구",
+            f"이전 종료 시점의 미저장 작업이 있습니다.\n\n"
+            f"파일: {target}\n저장 시각: {saved_at}\n\n복구하시겠습니까?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.editor.setPlainText(content)
+            self.current_file = draft.get("current_file")
+            self.is_modified = True
+            self.update_title()
+            self.status_bar.showMessage("드래프트를 복구했습니다", 4000)
+        else:
+            self._clear_draft()
     
     def check_save(self):
         if self.is_modified:
@@ -2977,8 +3261,19 @@ await mermaid.run({{
     def export_html(self):
         path, _ = QFileDialog.getSaveFileName(self, "HTML 내보내기", "", "HTML (*.html)")
         if path:
-            self.preview.page().toHtml(lambda html: self._write_file(path, html))
-    
+            self.preview.page().toHtml(lambda html: self._write_file(path, self._portable_html(html)))
+
+    def _portable_html(self, content):
+        # 내보낸 HTML 은 받는 사람 PC 에서 열리므로, 로컬 번들 경로를 CDN URL 로 되돌린다.
+        # 번들된 SVG 는 이미 DOM 에 박혀 있지만, 재렌더/추가 다이어그램을 위해 유효한 src 로 교체.
+        replacements = [
+            (MERMAID_LOCAL_URL, MERMAID_CDN_URL),
+            (MATHJAX_LOCAL_URL, MATHJAX_CDN_URL),
+        ]
+        for src, dst in replacements:
+            content = content.replace(src, dst)
+        return content
+
     def _write_file(self, path, content):
         with open(path, 'w', encoding='utf-8') as f:
             f.write(content)
@@ -3107,23 +3402,51 @@ await mermaid.run({{
         dlg.exec()
     
     # ===== Mermaid =====
+    _MERMAID_BLOCK_RE = re.compile(r"```mermaid[ \t]*\r?\n([\s\S]*?)```", re.IGNORECASE)
+
+    def _mermaid_block_at(self, position):
+        # 주어진 문자 오프셋이 들어있는 mermaid 블록 인덱스, 코드, span 반환. 없으면 None.
+        text = self.editor.toPlainText()
+        for i, m in enumerate(self._MERMAID_BLOCK_RE.finditer(text)):
+            if m.start() <= position <= m.end():
+                return i, m.group(1), (m.start(), m.end())
+        return None
+
+    def _on_editor_context_menu(self, pos):
+        menu = self.editor.createStandardContextMenu()
+        cursor = self.editor.cursorForPosition(pos)
+        hit = self._mermaid_block_at(cursor.position())
+        if hit is not None:
+            idx, code, _span = hit
+            menu.addSeparator()
+            open_act = menu.addAction(f"🔍 Mermaid 뷰어로 열기 (#{idx + 1})")
+            open_act.triggered.connect(lambda _=False, i=idx: self.open_mermaid_viewer_at(i))
+            copy_act = menu.addAction("📋 차트 코드 복사")
+            copy_act.triggered.connect(lambda _=False, c=code: QApplication.clipboard().setText(c))
+        menu.exec(self.editor.mapToGlobal(pos))
+
     def open_mermaid_viewer(self):
+        self.open_mermaid_viewer_at(0)
+
+    def open_mermaid_viewer_at(self, index=0):
         text = self.editor.toPlainText()
         blocks = extract_mermaid_blocks(text)
         if not blocks:
             blocks = [MermaidViewer.default_mermaid_code()]
-        
+        # 인덱스 범위 보정
+        idx = max(0, min(int(index), len(blocks) - 1))
+
         if self.mermaid_viewer is None or not self.mermaid_viewer.isVisible():
             self.mermaid_viewer = MermaidViewer(
-                blocks[0],
+                blocks[idx],
                 self.dark_mode,
                 self,
                 mermaid_blocks=blocks,
-                current_index=0
+                current_index=idx,
             )
             self.mermaid_viewer.show()
         else:
-            self.mermaid_viewer.update_mermaid_blocks(blocks, index=0)
+            self.mermaid_viewer.update_mermaid_blocks(blocks, index=idx)
             self.mermaid_viewer.raise_()
             self.mermaid_viewer.activateWindow()
 
@@ -3224,7 +3547,7 @@ await mermaid.run({{
     
     # ===== 도움말 =====
     def show_about(self):
-        QMessageBox.about(self, "Nebula Note", 
+        QMessageBox.about(self, "Nebula Note",
             f"<h2>Nebula Note v1.0</h2>"
             f"<p>프로페셔널 마크다운 에디터</p>"
             f"<hr>"
@@ -3236,11 +3559,17 @@ await mermaid.run({{
             f"<li>문서 개요 & 통계</li>"
             f"<li>스니펫 관리</li>"
             f"<li>다크 모드</li>"
+            f"</ul>"
+            f"<hr>"
+            f"<p><b>번들 라이브러리</b> (오프라인 동작 보장):</p>"
+            f"<ul>"
+            f"<li>Mermaid {MERMAID_VERSION}</li>"
+            f"<li>MathJax {MATHJAX_VERSION} (tex-svg-full)</li>"
             f"</ul>")
     
     def show_shortcuts(self):
         QMessageBox.information(self, "단축키", """
-<h3>단축키 안내</h3>
+<h3>에디터</h3>
 <table>
 <tr><td><b>Ctrl+N</b></td><td>새 문서</td></tr>
 <tr><td><b>Ctrl+O</b></td><td>열기</td></tr>
@@ -3256,6 +3585,19 @@ await mermaid.run({{
 <tr><td><b>Tab</b></td><td>스니펫 확장</td></tr>
 <tr><td><b>Esc</b></td><td>포커스 모드 종료</td></tr>
 </table>
+<h3>Mermaid 뷰어</h3>
+<table>
+<tr><td><b>← / →</b></td><td>이전 / 다음 다이어그램</td></tr>
+<tr><td><b>F</b></td><td>화면에 맞춤</td></tr>
+<tr><td><b>0</b></td><td>실제 크기 (1:1)</td></tr>
+<tr><td><b>Ctrl + / -</b></td><td>확대 / 축소</td></tr>
+<tr><td><b>Ctrl+휠</b></td><td>커서 기준 확대/축소</td></tr>
+<tr><td><b>휠 / Shift+휠</b></td><td>세로 / 가로 패닝</td></tr>
+<tr><td><b>드래그</b></td><td>자유 이동</td></tr>
+<tr><td><b>더블클릭</b></td><td>fit ↔ 1:1 토글</td></tr>
+<tr><td><b>F11</b></td><td>전체 화면</td></tr>
+<tr><td><b>Esc</b></td><td>닫기</td></tr>
+</table>
 """)
     
     def closeEvent(self, event):
@@ -3264,7 +3606,100 @@ await mermaid.run({{
             return
         self.save_settings()
         self.save_snippets()
+        # 사용자가 저장(또는 폐기)을 마쳤으니 드래프트는 더 이상 필요 없음.
+        # check_save 가 True 를 반환했더라도 사용자가 "Discard" 했을 수 있으니 modified 여부로 분기.
+        if not self.is_modified:
+            self._clear_draft()
         event.accept()
+
+    # ===== 드래그&드롭 (이미지 자동 저장 + 링크 삽입) =====
+    IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp", ".tiff", ".tif", ".ico"}
+
+    def dragEnterEvent(self, event):
+        md = event.mimeData()
+        if md.hasUrls() and any(u.isLocalFile() for u in md.urls()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        urls = [u for u in event.mimeData().urls() if u.isLocalFile()]
+        if not urls:
+            event.ignore()
+            return
+        paths = [u.toLocalFile() for u in urls]
+        images = [p for p in paths if os.path.splitext(p)[1].lower() in self.IMAGE_EXTS]
+        others = [p for p in paths if p not in images]
+
+        # 이미지가 있으면 자동 저장 + 링크 삽입
+        if images:
+            self._handle_image_drop(images)
+            event.acceptProposedAction()
+            return
+
+        # 단일 비이미지 — .md 같은 파일이면 열기 제안
+        if len(others) == 1 and os.path.splitext(others[0])[1].lower() in {".md", ".markdown", ".txt", ".mkd", ".mdown"}:
+            self.open_file(others[0])
+            event.acceptProposedAction()
+            return
+
+        event.ignore()
+
+    def _handle_image_drop(self, image_paths):
+        # 저장 디렉터리 결정: 현재 파일 옆 assets/, 미저장이면 사용자에게 안내
+        if self.current_file:
+            doc_dir = os.path.dirname(os.path.abspath(self.current_file))
+            assets_dir = os.path.join(doc_dir, "assets")
+        else:
+            QMessageBox.information(
+                self,
+                "이미지 삽입",
+                "이미지 자동 저장은 현재 문서가 저장된 위치를 기준으로 동작합니다.\n"
+                "먼저 문서를 저장한 뒤 다시 끌어다 놓아주세요.",
+            )
+            return
+        try:
+            os.makedirs(assets_dir, exist_ok=True)
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"assets 폴더 생성 실패: {e}")
+            return
+
+        import shutil
+        cursor = self.editor.textCursor()
+        inserted = []
+        for src in image_paths:
+            base = os.path.basename(src)
+            stem, ext = os.path.splitext(base)
+            dst = os.path.join(assets_dir, base)
+            i = 1
+            # 동일 이름 충돌 시 _1, _2... 부여 (덮어쓰지 않음)
+            while os.path.exists(dst) and not self._same_file(src, dst):
+                dst = os.path.join(assets_dir, f"{stem}_{i}{ext}")
+                i += 1
+            try:
+                if not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+            except Exception as e:
+                QMessageBox.critical(self, "오류", f"이미지 복사 실패: {e}")
+                continue
+            rel = os.path.relpath(dst, os.path.dirname(self.current_file)).replace(os.sep, "/")
+            alt = os.path.splitext(os.path.basename(dst))[0]
+            inserted.append(f"![{alt}]({rel})")
+
+        if inserted:
+            cursor.insertText("\n".join(inserted) + "\n")
+            self.status_bar.showMessage(f"이미지 {len(inserted)}개 삽입", 3000)
+
+    @staticmethod
+    def _same_file(a, b):
+        try:
+            return os.path.samefile(a, b)
+        except OSError:
+            return False
     
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -3294,24 +3729,19 @@ def main():
     window = MarkdownEditor()
     window.show()
 
-    # Close splash screen if it exists
-    try:
-        import pyi_splash
-        pyi_splash.close()
-    except ImportError:
-        pass
-
     # Check for command line arguments (file to open)
-    if len(sys.argv) > 1:
-        file_path = sys.argv[1]
-        if os.path.exists(file_path):
-            def open_initial():
-                # 초기 파일 열기 시 저장 프롬프트 방지
-                window.is_modified = False
-                window.open_file(file_path)
-            
-            # Use QTimer to open file after the window is shown and event loop starts
-            QTimer.singleShot(100, open_initial)
+    cli_file = None
+    if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
+        cli_file = sys.argv[1]
+
+    if cli_file:
+        def open_initial():
+            window.is_modified = False
+            window.open_file(cli_file)
+        QTimer.singleShot(100, open_initial)
+    else:
+        # 명시적인 파일 인자가 없을 때만 드래프트 복구 프롬프트
+        QTimer.singleShot(150, window._maybe_recover_draft)
     
     sys.exit(app.exec())
 

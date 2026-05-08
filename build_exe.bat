@@ -11,8 +11,33 @@ echo.
 
 :: 1. Clean previous builds
 echo [1/5] Cleaning previous builds...
-if exist build rmdir /s /q build
-if exist dist rmdir /s /q dist
+
+:: 1-a. 잔존 프로세스 종료 — DLL 점유 해제 (이게 없으면 PermissionError 로 빌드 실패)
+::      Nebula Note 본체 + PyQt6 WebEngine 헬퍼 프로세스
+taskkill /F /IM "Nebula Note.exe" /T >nul 2>&1
+taskkill /F /IM "QtWebEngineProcess.exe" /T >nul 2>&1
+
+:: 1-b. 디렉터리 삭제 — 점유 해제 직후엔 핸들이 잠깐 남을 수 있어 짧게 재시도
+call :try_rmdir build
+call :try_rmdir dist
+if exist dist (
+    echo Error: 'dist' 폴더를 삭제할 수 없습니다. 다른 프로그램이 점유 중일 수 있습니다.
+    echo        - 작업 관리자에서 "Nebula Note", "QtWebEngineProcess" 강제 종료 후 재시도
+    echo        - 그래도 안 되면 윈도우 재부팅 후 재시도
+    goto :error
+)
+goto :after_clean
+
+:try_rmdir
+if not exist "%~1" exit /b 0
+rmdir /s /q "%~1" 2>nul
+if not exist "%~1" exit /b 0
+:: 1차 실패 — 잠깐 대기 후 재시도
+ping -n 3 127.0.0.1 >nul
+rmdir /s /q "%~1" 2>nul
+exit /b 0
+
+:after_clean
 
 :: 2. Setup Virtual Environment
 if not exist venv (
@@ -40,8 +65,8 @@ echo [4/5] Building Executable with PyInstaller...
 python -m PyInstaller --noconfirm --windowed ^
     --name "Nebula Note" ^
     --icon "icon.ico" ^
-    --splash "splash.png" ^
     --add-data "icon.ico;." ^
+    --add-data "assets;assets" ^
     markdown_editor.py
 
 if %errorlevel% neq 0 (

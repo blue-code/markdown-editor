@@ -14,6 +14,7 @@ LIBFFI_CANDIDATES = [
 ]
 LIBFFI_FRAMEWORKS = [p for p in LIBFFI_CANDIDATES if os.path.exists(p)]
 
+# assets/ 는 OPTIONS.resources 로 통째 복사 — DATA_FILES 에 다시 넣으면 이중 번들
 DATA_FILES = ['icon.ico']
 
 OPTIONS = {
@@ -58,7 +59,7 @@ OPTIONS = {
     'packages': ['PyQt6', 'markdown', 'pygments'],
     'includes': [
         'PyQt6.QtCore',
-        'PyQt6.QtWidgets', 
+        'PyQt6.QtWidgets',
         'PyQt6.QtGui',
         'PyQt6.QtWebEngineWidgets',
         'PyQt6.QtWebChannel',
@@ -77,7 +78,7 @@ OPTIONS = {
     ],
     'excludes': ['tkinter', 'test'],
     'frameworks': LIBFFI_FRAMEWORKS,
-    'resources': ['icon.ico'],
+    'resources': ['icon.ico', 'assets'],
 }
 
 setup(

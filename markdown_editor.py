@@ -1627,8 +1627,11 @@ html,body{{width:100%;height:100%;overflow:hidden;background:{bg}}}
     overflow:hidden;
 }}
 #container.dragging{{cursor:grabbing}}
-#diagram{{transform-origin:center center;will-change:transform}}
+/* 팬(translate)만 이 div 에 적용한다. 확대/축소는 SVG 자체 크기로 처리해 벡터 품질을 유지한다. */
+#diagram{{will-change:transform}}
 .mermaid{{background:transparent}}
+/* 줌 시 SVG 를 실제 크기로 다시 그려 항상 선명하게 유지 */
+#diagram svg{{display:block}}
 </style></head><body>
 <div id="container"><div id="diagram" class="mermaid">
 {self.mermaid_code}
@@ -1649,20 +1652,51 @@ mermaid.initialize({{
   sankey: {{ useMaxWidth: false }},
 }});
 
-mermaid.run({{ querySelector: '.mermaid' }});
+// 렌더가 끝난 뒤에야 SVG 자연 크기를 잴 수 있으므로 run 완료를 기다린다.
+mermaid.run({{ querySelector: '.mermaid' }}).then(function() {{
+    measureNatural();
+    applyTransform();
+}}).catch(function() {{}});
 </script>
 
 <script>
 var bridge = null;
 new QWebChannel(qt.webChannelTransport, function(c) {{ bridge = c.objects.bridge; }});
 
-// ===== 변환 상태 (translate + scale) =====
+// ===== 변환 상태 =====
+// tx,ty: 팬 오프셋(px) / s: 배율 / natW,natH: SVG 자연 크기(px)
+// 팬은 div 의 CSS translate 로, 확대/축소는 SVG width/height 를 실제로 바꿔
+// 매 배율마다 벡터를 다시 래스터화하게 한다. (transform: scale 은 비트맵을 늘려 흐릿해짐)
 var tx = 0, ty = 0, s = 1;
+var natW = 0, natH = 0;
 var MIN_S = 0.1, MAX_S = 5.0;
+
+function getSvg() {{
+    var d = document.getElementById('diagram');
+    return d ? d.querySelector('svg') : null;
+}}
+
+// 현재 배율을 무시한 SVG 본래 크기를 측정해 기준값으로 저장한다.
+function measureNatural() {{
+    var svg = getSvg();
+    if (!svg) return;
+    var prevW = svg.style.width, prevH = svg.style.height;
+    svg.style.width = ''; svg.style.height = '';
+    var r = svg.getBoundingClientRect();
+    if (r.width && r.height) {{ natW = r.width; natH = r.height; }}
+    svg.style.width = prevW; svg.style.height = prevH;
+}}
 
 function applyTransform() {{
     var d = document.getElementById('diagram');
-    if (d) d.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
+    var svg = getSvg();
+    if (svg && natW && natH) {{
+        // 벡터 재렌더: 배율을 실제 픽셀 크기로 반영 → 어떤 배율에서도 선명
+        svg.style.width = (natW * s) + 'px';
+        svg.style.height = (natH * s) + 'px';
+    }}
+    // 팬만 translate 로 처리 (translate 는 배율이 없어 흐림이 발생하지 않음)
+    if (d) d.style.transform = 'translate(' + tx + 'px,' + ty + 'px)';
 }}
 
 function notifyZoom() {{
@@ -1754,19 +1788,13 @@ function setZoom(percent) {{
 }})();
 
 function fitToView() {{
-    // 팬 리셋 후 컨테이너에 딱 맞도록 scale 재계산
+    // 팬 리셋 후 컨테이너에 딱 맞도록 배율 재계산
     var c = document.getElementById('container');
-    var d = document.getElementById('diagram');
-    var svg = d ? d.querySelector('svg') : null;
-    if (!svg) return 100;
-    // 현재 변환을 잠시 제거하여 자연 크기를 측정
-    var prev = d.style.transform;
-    d.style.transform = 'translate(0,0) scale(1)';
-    var nat = svg.getBoundingClientRect();
-    d.style.transform = prev;
+    if (!natW || !natH) measureNatural();
+    if (!natW || !natH) return 100;
     var cw = c.clientWidth - 60;
     var ch = c.clientHeight - 60;
-    var ns = Math.min(cw / nat.width, ch / nat.height);
+    var ns = Math.min(cw / natW, ch / natH);
     ns = Math.max(MIN_S, Math.min(MAX_S, ns));
     tx = 0; ty = 0; s = ns;
     applyTransform();
@@ -1778,6 +1806,8 @@ function exportSVG() {{
   if (svg && bridge) {{
     var clone = svg.cloneNode(true);
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    // 화면 배율과 무관하게 항상 본래 크기로 내보낸다.
+    clone.style.width = ''; clone.style.height = '';
     bridge.receiveSvg(new XMLSerializer().serializeToString(clone));
   }}
 }}
@@ -1786,7 +1816,11 @@ function exportPNG(scale) {{
   scale = scale || 1;
   var svg = document.querySelector('#diagram svg');
   if (svg && bridge) {{
-    var data = new XMLSerializer().serializeToString(svg);
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    // 화면 배율과 무관하게 항상 본래 크기 기준으로 래스터화한다.
+    clone.style.width = ''; clone.style.height = '';
+    var data = new XMLSerializer().serializeToString(clone);
     var canvas = document.createElement('canvas');
     var ctx = canvas.getContext('2d');
     var img = new Image();
@@ -2089,7 +2123,12 @@ class FileExplorerPanel(QWidget):
         self.tree.setHeaderHidden(True)
         
         self.tree.doubleClicked.connect(self.on_double_click)
-        
+
+        # QFileSystemModel 은 디렉터리를 비동기로 읽으므로, 루트 변경 직후에는
+        # 대상 파일 행이 아직 없을 수 있다. 로드 완료 신호를 받아 그때 선택한다.
+        self._pending_reveal = None
+        self.model.directoryLoaded.connect(self._on_directory_loaded)
+
         layout.addWidget(self.tree)
 
     def open_directory(self):
@@ -2110,6 +2149,30 @@ class FileExplorerPanel(QWidget):
         file_path = self.model.filePath(index)
         if os.path.isfile(file_path):
             self.file_clicked.emit(file_path)
+
+    def reveal_path(self, file_path):
+        """열린 파일이 있는 폴더로 탐색기 루트를 옮기고 해당 파일을 선택한다."""
+        if not file_path or not os.path.isfile(file_path):
+            return
+        abs_path = os.path.abspath(file_path)
+        folder = os.path.dirname(abs_path)
+        self._pending_reveal = abs_path
+        # 파일이 속한 폴더를 루트로 (요청: 파일 위치 폴더로 이동)
+        self.set_root_path(folder)
+        # 이미 로드된 폴더라면 directoryLoaded 가 오지 않을 수 있어 즉시도 시도한다.
+        self._select_pending()
+
+    def _on_directory_loaded(self, _loaded_path):
+        self._select_pending()
+
+    def _select_pending(self):
+        if not self._pending_reveal:
+            return
+        idx = self.model.index(self._pending_reveal)
+        if idx.isValid():
+            self.tree.setCurrentIndex(idx)
+            self.tree.scrollTo(idx)
+            self._pending_reveal = None
 
 
 class CheatSheetPanel(QWidget):
@@ -3069,6 +3132,8 @@ mermaid.run({{ querySelector: '.mermaid' }});
                 self.update_title()
                 self.add_to_recent(path)
                 self._clear_draft()
+                # 왼쪽 탐색기를 이 파일이 있는 폴더로 이동시키고 파일을 선택 표시
+                self.file_panel.reveal_path(path)
             except Exception as e:
                 QMessageBox.critical(self, "오류", str(e))
             finally:

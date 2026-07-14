@@ -1676,24 +1676,41 @@ function getSvg() {{
     return d ? d.querySelector('svg') : null;
 }}
 
-// 현재 배율을 무시한 SVG 본래 크기를 측정해 기준값으로 저장한다.
+// SVG 본래 크기를 측정해 기준값으로 저장한다.
+// 레이아웃 완료 타이밍에 의존하는 getBoundingClientRect 대신 width/height 속성과
+// viewBox 를 우선 사용한다. (렌더 직후에도 즉시 유효 → 줌 무반응 방지)
 function measureNatural() {{
     var svg = getSvg();
     if (!svg) return;
-    var prevW = svg.style.width, prevH = svg.style.height;
-    svg.style.width = ''; svg.style.height = '';
-    var r = svg.getBoundingClientRect();
-    if (r.width && r.height) {{ natW = r.width; natH = r.height; }}
-    svg.style.width = prevW; svg.style.height = prevH;
+    var w = parseFloat(svg.getAttribute('width'));
+    var h = parseFloat(svg.getAttribute('height'));
+    if (!w || !h) {{
+        var vb = svg.viewBox && svg.viewBox.baseVal;
+        if (vb && vb.width && vb.height) {{ w = vb.width; h = vb.height; }}
+    }}
+    if (!w || !h) {{
+        var prevW = svg.style.width, prevH = svg.style.height;
+        svg.style.width = ''; svg.style.height = '';
+        var r = svg.getBoundingClientRect();
+        svg.style.width = prevW; svg.style.height = prevH;
+        w = r.width; h = r.height;
+    }}
+    if (w && h) {{ natW = w; natH = h; }}
 }}
 
 function applyTransform() {{
     var d = document.getElementById('diagram');
     var svg = getSvg();
-    if (svg && natW && natH) {{
-        // 벡터 재렌더: 배율을 실제 픽셀 크기로 반영 → 어떤 배율에서도 선명
-        svg.style.width = (natW * s) + 'px';
-        svg.style.height = (natH * s) + 'px';
+    if (svg) {{
+        // 아직 기준 크기를 못 구했으면 이 시점에 재측정 (self-healing)
+        if (!natW || !natH) measureNatural();
+        if (natW && natH) {{
+            // 벡터 재렌더: 배율을 실제 픽셀 크기로 반영 → 어떤 배율에서도 선명
+            // mermaid 가 걸어둔 max-width 제한이 있으면 확대가 막히므로 해제한다.
+            svg.style.maxWidth = 'none';
+            svg.style.width = (natW * s) + 'px';
+            svg.style.height = (natH * s) + 'px';
+        }}
     }}
     // 팬만 translate 로 처리 (translate 는 배율이 없어 흐림이 발생하지 않음)
     if (d) d.style.transform = 'translate(' + tx + 'px,' + ty + 'px)';

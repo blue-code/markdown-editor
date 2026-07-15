@@ -62,11 +62,32 @@ if %errorlevel% neq 0 (
 
 :: 4. Build Executable
 echo [4/5] Building Executable with PyInstaller...
+:: 미사용 Qt 모듈 제외 — 실제 사용 모듈은 Widgets/Core/Gui/WebEngine(Widgets,Core)/WebChannel/PrintSupport 뿐.
+:: 3D·Quick3D·Multimedia·Charts·Sensors 등 마크다운 에디터와 무관한 모듈을 번들에서 배제해 용량을 줄인다.
 python -m PyInstaller --noconfirm --windowed ^
     --name "Nebula Note" ^
     --icon "icon.ico" ^
     --add-data "icon.ico;." ^
     --add-data "assets;assets" ^
+    --exclude-module PyQt6.QtMultimedia ^
+    --exclude-module PyQt6.QtMultimediaWidgets ^
+    --exclude-module PyQt6.QtBluetooth ^
+    --exclude-module PyQt6.QtNfc ^
+    --exclude-module PyQt6.QtPositioning ^
+    --exclude-module PyQt6.QtLocation ^
+    --exclude-module PyQt6.QtSensors ^
+    --exclude-module PyQt6.QtSerialPort ^
+    --exclude-module PyQt6.QtRemoteObjects ^
+    --exclude-module PyQt6.QtSql ^
+    --exclude-module PyQt6.QtTest ^
+    --exclude-module PyQt6.QtHelp ^
+    --exclude-module PyQt6.QtDesigner ^
+    --exclude-module PyQt6.QtCharts ^
+    --exclude-module PyQt6.QtDataVisualization ^
+    --exclude-module PyQt6.QtQuick ^
+    --exclude-module PyQt6.QtQuick3D ^
+    --exclude-module PyQt6.QtQuickWidgets ^
+    --exclude-module PyQt6.QtQml ^
     markdown_editor.py
 
 if %errorlevel% neq 0 (
@@ -85,6 +106,10 @@ echo ======================================================
 echo [*] Executable Build Success!
 echo Location: dist\Nebula Note\Nebula Note.exe
 echo ======================================================
+
+:: 빌드 경량화 — 디버그 리소스/불필요 로케일/qml 제거 (NSIS 패키징 전에 수행)
+echo [*] Pruning build (debug resources, locales, qml)...
+powershell -NoProfile -ExecutionPolicy Bypass -File "prune_build.ps1"
 
 if defined SKIP_INSTALLER (
     echo [Notice] Skipping installer build as requested.

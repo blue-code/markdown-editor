@@ -2249,6 +2249,8 @@ class MarkdownEditor(QMainWindow):
         self.focus_mode = False
         self.custom_css_path = ""
         self.recent_files = []
+        # 마지막으로 열었던 파일 경로 — 다음 실행 시 자동 복원용
+        self.last_file = ""
         self.mermaid_viewer = None
         self.snippets = DEFAULT_SNIPPETS.copy()
         self.word_goal = 0
@@ -2290,6 +2292,7 @@ class MarkdownEditor(QMainWindow):
                     cfg = json.load(f)
                     self.dark_mode = cfg.get('dark_mode', False)
                     self.recent_files = cfg.get('recent_files', [])
+                    self.last_file = cfg.get('last_file', "")
                     self.word_goal = cfg.get('word_goal', 0)
                     self.custom_css_path = cfg.get('custom_css_path', "")
                     self.sync_scroll_enabled = cfg.get('sync_scroll', True)
@@ -2302,6 +2305,7 @@ class MarkdownEditor(QMainWindow):
                 json.dump({
                     'dark_mode': self.dark_mode,
                     'recent_files': self.recent_files[:10],
+                    'last_file': self.current_file or "",
                     'word_goal': self.word_goal,
                     'custom_css_path': self.custom_css_path,
                     'sync_scroll': self.sync_scroll_enabled,
@@ -3244,7 +3248,22 @@ mermaid.run({{ querySelector: '.mermaid' }});
             self.status_bar.showMessage("드래프트를 복구했습니다", 4000)
         else:
             self._clear_draft()
-    
+
+    def _restore_startup_state(self):
+        """시작 시 세션 복원. 미저장 드래프트를 먼저 확인하고,
+        복구된 내용이 없으면 마지막으로 열었던 파일을 자동으로 연다."""
+        self._maybe_recover_draft()
+        # 드래프트로 무언가 열렸다면(파일 지정 또는 본문 존재) 마지막 파일 복원은 건너뛴다.
+        if self.current_file is None and not self.editor.toPlainText().strip():
+            self._open_last_file()
+
+    def _open_last_file(self):
+        """마지막 파일이 실제로 존재할 때만 연다. 없으면 조용히 기본 상태 유지."""
+        path = self.last_file or ""
+        if path and os.path.isfile(path):
+            # open_file 이 좌측 탐색기를 해당 폴더로 이동·선택까지 처리한다.
+            self.open_file(path)
+
     def check_save(self):
         if self.is_modified:
             reply = QMessageBox.question(self, "저장", "변경사항을 저장하시겠습니까?",
@@ -3822,8 +3841,8 @@ def main():
             window.open_file(cli_file)
         QTimer.singleShot(100, open_initial)
     else:
-        # 명시적인 파일 인자가 없을 때만 드래프트 복구 프롬프트
-        QTimer.singleShot(150, window._maybe_recover_draft)
+        # 명시적인 파일 인자가 없으면 드래프트 복구 → 마지막 파일 자동 복원
+        QTimer.singleShot(150, window._restore_startup_state)
     
     sys.exit(app.exec())
 

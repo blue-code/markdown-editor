@@ -80,7 +80,37 @@ def prune(app_path):
         for path in glob.glob(os.path.join(app_path, pattern), recursive=True):
             remove(path)
 
+    for framework in glob.glob(os.path.join(lib, "*.framework")):
+        restructure_framework(framework)
+
     verify(qt, lib)
+
+
+def restructure_framework(framework):
+    """Rebuild the standard versioned layout that pip wheels flatten (they cannot store symlinks).
+
+    App Store validation (ITMS-90260) requires Name.framework/{Name, Resources} to be symlinks into
+    Versions/Current, with Info.plist under Versions/A/Resources.
+    """
+    name = os.path.basename(framework)[: -len(".framework")]
+    version_dir = os.path.join(framework, "Versions", "A")
+    if not os.path.isfile(os.path.join(version_dir, name)):
+        return
+    top_resources = os.path.join(framework, "Resources")
+    if os.path.isdir(top_resources) and not os.path.islink(top_resources):
+        target = os.path.join(version_dir, "Resources")
+        remove(target)
+        shutil.move(top_resources, target)
+    for stale in ("_CodeSignature", os.path.join("Versions", "A", "_CodeSignature")):
+        remove(os.path.join(framework, stale))
+    links = {
+        os.path.join(framework, "Versions", "Current"): "A",
+        os.path.join(framework, name): os.path.join("Versions", "Current", name),
+        os.path.join(framework, "Resources"): os.path.join("Versions", "Current", "Resources"),
+    }
+    for link, target in links.items():
+        remove(link)
+        os.symlink(target, link)
 
 
 def verify(qt, lib):

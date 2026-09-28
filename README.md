@@ -1,4 +1,4 @@
-# Nebula Note 3.1
+# Nebula Note 1.3
 
 > ✨ Pure & Sexy Markdown Editor - Mermaid 19종 다이어그램 완벽 지원 · 한국어/English/日本語/简体中文
 
@@ -130,7 +130,7 @@ ASC_KEY_ID=... ASC_ISSUER_ID=... ./build_mas.sh --upload   # 검증 + App Store 
 
 - 프로비저닝 프로파일: `python mas/asc.py ensure-profile com.blueCode.NebulaNote mas/NebulaNote_MAS.provisionprofile`
 - 스토어 메타데이터/스크린샷(4개 언어): `fastlane/metadata`, `fastlane/screenshots`
-- 버전: `version.py` (`__version__`, 업로드마다 증가하는 `BUILD_NUMBER`)
+- 버전: `app_version.py` (`APP_VERSION`, MAS 업로드마다 증가하는 `BUILD_NUMBER`)
 
 ## 🚀 사용법
 
@@ -211,8 +211,8 @@ markdown-editor/
 ├── file_io.py             # 샌드박스 대응 사용자 파일 입출력 (QFile)
 ├── markdown_tools.py      # 표 정렬 등 텍스트 변환
 ├── mermaid_utils.py       # Mermaid 블록 추출
-├── version.py             # 앱 버전 (빌드 스크립트 공용)
-├── assets/vendor/         # 번들 Mermaid / MathJax (오프라인 동작)
+├── app_version.py         # 앱 버전 (빌드 스크립트 공용)
+├── assets/                # 번들 Mermaid / MathJax (오프라인 동작)
 ├── mas/                   # App Store 엔타이틀먼트, 번들 정리, ASC API 도구
 ├── fastlane/              # 스토어 메타데이터·스크린샷
 ├── setup.py               # py2app 빌드 설정

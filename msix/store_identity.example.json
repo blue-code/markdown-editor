@@ -1,0 +1,7 @@
+{
+  "identity_name": "REPLACE_WITH_PACKAGE_IDENTITY_NAME",
+  "publisher": "REPLACE_WITH_CN=...",
+  "publisher_display_name": "REPLACE_WITH_PUBLISHER_DISPLAY_NAME",
+  "display_name": "REPLACE_WITH_RESERVED_STORE_NAME",
+  "description": "Mermaid 다이어그램과 수식을 지원하는 마크다운 에디터"
+}

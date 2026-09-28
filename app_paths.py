@@ -7,7 +7,7 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def resource_path(relative_path):
-    """Absolute path to a bundled resource such as 'assets/vendor/mermaid.min.js'."""
+    """Absolute path to a bundled resource such as 'assets/mermaid/mermaid.min.js'."""
     base_path = getattr(sys, "_MEIPASS", None)  # PyInstaller (Windows)
     if not base_path:
         base_path = os.environ.get("RESOURCEPATH")  # py2app (macOS)

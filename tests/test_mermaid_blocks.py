@@ -1,6 +1,6 @@
-﻿import unittest
+import unittest
 
-from mermaid_utils import extract_mermaid_blocks
+from mermaid_utils import extract_mermaid_blocks, mermaid_block_at
 
 
 class MermaidBlockExtractTests(unittest.TestCase):
@@ -29,6 +29,21 @@ class MermaidBlockExtractTests(unittest.TestCase):
         text = "```python\nprint('hi')\n```\n"
         blocks = extract_mermaid_blocks(text)
         self.assertEqual(blocks, [])
+
+
+class MermaidBlockAtTests(unittest.TestCase):
+    TEXT = "intro\n```mermaid\nflowchart TD\nA-->B\n```\nmiddle\n```mermaid\npie\n```\n"
+
+    def test_position_inside_second_block(self):
+        position = self.TEXT.index("pie")
+        self.assertEqual(mermaid_block_at(self.TEXT, position), (1, "pie\n"))
+
+    def test_position_on_fence_counts(self):
+        self.assertEqual(mermaid_block_at(self.TEXT, self.TEXT.index("```mermaid"))[0], 0)
+
+    def test_position_outside_blocks(self):
+        self.assertIsNone(mermaid_block_at(self.TEXT, self.TEXT.index("middle")))
+        self.assertIsNone(mermaid_block_at("", 0))
 
 
 if __name__ == "__main__":

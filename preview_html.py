@@ -168,6 +168,24 @@ function addCodeCopyButtons(root) {
   });
 }
 
+function wrapMermaidBlocks(root) {
+  // The button sits next to .mermaid (mermaid only replaces that element's content), so it survives rendering.
+  root.querySelectorAll('.mermaid').forEach(function(el, idx) {
+    if (el.parentElement && el.parentElement.classList.contains('mermaid-wrap')) { return; }
+    var wrap = document.createElement('div');
+    wrap.className = 'mermaid-wrap';
+    el.parentNode.insertBefore(wrap, el);
+    wrap.appendChild(el);
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mermaid-fullview-btn';
+    btn.textContent = COPY_LABELS.fullview;
+    btn.title = COPY_LABELS.fullview_tip;
+    btn.addEventListener('click', function() { nebulaPost('openMermaid', idx); });
+    wrap.appendChild(btn);
+  });
+}
+
 function renderDiagrams(root) {
   var nodes = root.querySelectorAll('.mermaid');
   if (!nodes.length || !window.mermaid) { return; }
@@ -188,6 +206,7 @@ window.nebulaRender = function(content, baseUrl) {
   if (window.MathJax && window.MathJax.typesetClear) { window.MathJax.typesetClear([root]); }
   root.innerHTML = content;
   addCodeCopyButtons(root);
+  wrapMermaidBlocks(root);
   renderDiagrams(root);
   renderMath(root);
 };
@@ -226,7 +245,13 @@ a:hover { text-decoration: underline; }
 ul, ol { padding-left: 2em; }
 li { margin: 0.3em 0; }
 hr { border: none; border-top: 1px solid __CODE_BG__; margin: 2em 0; }
-.mermaid { background: transparent; text-align: center; margin: 1em 0; }
+.mermaid { background: transparent; text-align: center; margin: 0; }
+.mermaid-wrap { position: relative; margin: 1em 0; }
+.mermaid-fullview-btn { position: absolute; top: 8px; right: 8px; z-index: 10; border: 1px solid __BTN_BORDER__;
+  background: __BTN_BG__; color: __FG__; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+  opacity: 0.55; transition: opacity 0.15s ease; }
+.mermaid-wrap:hover .mermaid-fullview-btn { opacity: 1; }
+.mermaid-fullview-btn:hover { background: __BTN_HOVER__; }
 input[type="checkbox"] { margin-right: 8px; }
 __PYGMENTS_CSS__
 __CUSTOM_CSS__
@@ -272,32 +297,75 @@ _VIEWER_TEMPLATE = """<!DOCTYPE html>
 __BRIDGE_HEAD__
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:auto;background:__BG__;color:__FG__}
-#container{display:flex;justify-content:center;align-items:center;min-height:100%;padding:30px}
-#diagram{transform-origin:center;transition:transform 0.15s ease-out}
+html,body{width:100%;height:100%;overflow:hidden;background:__BG__;color:__FG__}
+#container{display:flex;justify-content:center;align-items:center;width:100%;height:100%;padding:30px;
+  cursor:grab;user-select:none;-webkit-user-select:none;overflow:hidden}
+#container.dragging{cursor:grabbing}
+/* Pan uses translate on this div; zoom resizes the SVG itself so it stays sharp at any scale. */
+#diagram{will-change:transform}
+#diagram svg{display:block}
 #error{position:fixed;left:0;right:0;bottom:0;font-family:'SF Mono',Menlo,Consolas,monospace;white-space:pre-wrap;color:#d9534f;padding:20px}
 </style>
 <script>
 __POST_SCRIPT__
-var currentScale = 1;
 var renderCount = 0;
 var currentCode = '';
+// tx,ty: pan offset (px) / s: scale / natW,natH: natural SVG size (px)
+var tx = 0, ty = 0, s = 1;
+var natW = 0, natH = 0;
+var MIN_S = 0.1, MAX_S = 5.0;
 
-function setZoom(s) {
-  currentScale = s / 100;
-  var el = document.getElementById('diagram');
-  if (el) { el.style.transform = 'scale(' + currentScale + ')'; }
+function getSvg() {
+  var d = document.getElementById('diagram');
+  return d ? d.querySelector('svg') : null;
+}
+
+// Prefer width/height attributes and viewBox over layout metrics, which are 0 right after rendering.
+function measureNatural() {
+  var svg = getSvg();
+  if (!svg) { return; }
+  var w = parseFloat(svg.getAttribute('width'));
+  var h = parseFloat(svg.getAttribute('height'));
+  if (!w || !h) {
+    var vb = svg.viewBox && svg.viewBox.baseVal;
+    if (vb && vb.width && vb.height) { w = vb.width; h = vb.height; }
+  }
+  if (!w || !h) {
+    var r = svg.getBoundingClientRect();
+    w = r.width; h = r.height;
+  }
+  if (w && h) { natW = w; natH = h; }
+}
+
+function applyTransform() {
+  var d = document.getElementById('diagram');
+  var svg = getSvg();
+  if (svg) {
+    if (!natW || !natH) { measureNatural(); }
+    if (natW && natH) {
+      svg.style.maxWidth = 'none';
+      svg.style.width = (natW * s) + 'px';
+      svg.style.height = (natH * s) + 'px';
+    }
+  }
+  if (d) { d.style.transform = 'translate(' + tx + 'px,' + ty + 'px)'; }
+}
+
+function notifyZoom() { nebulaPost('zoom', Math.round(s * 100)); }
+
+function setZoom(percent) {
+  s = Math.max(MIN_S, Math.min(MAX_S, percent / 100));
+  applyTransform();
 }
 
 function fitToView() {
   var c = document.getElementById('container');
-  var svg = document.querySelector('#diagram svg');
-  if (!svg) { return 100; }
-  var rect = svg.getBoundingClientRect();
-  var naturalWidth = rect.width / currentScale;
-  var naturalHeight = rect.height / currentScale;
-  var scale = Math.min((c.clientWidth - 60) / naturalWidth, (c.clientHeight - 60) / naturalHeight) * 100;
-  return Math.round(Math.min(Math.max(scale, 10), 500));
+  if (!natW || !natH) { measureNatural(); }
+  if (!natW || !natH) { return 100; }
+  var ns = Math.min((c.clientWidth - 60) / natW, (c.clientHeight - 60) / natH);
+  tx = 0; ty = 0; s = Math.max(MIN_S, Math.min(MAX_S, ns));
+  applyTransform();
+  return Math.round(s * 100);
 }
 
 window.nebulaShowDiagram = function(code) {
@@ -309,17 +377,72 @@ window.nebulaShowDiagram = function(code) {
   renderCount += 1;
   window.mermaid.render('nebula-diagram-' + renderCount, code).then(function(result) {
     target.innerHTML = result.svg;
+    natW = 0; natH = 0; tx = 0; ty = 0;
+    measureNatural();
+    applyTransform();
   }).catch(function(err) {
     target.innerHTML = '';
     errorBox.textContent = String(err && err.message ? err.message : err);
   });
 };
 
+document.addEventListener('DOMContentLoaded', function() {
+  var c = document.getElementById('container');
+  // Ctrl/Cmd + wheel (or pinch) zooms around the pointer; plain wheel pans, Shift + wheel pans sideways.
+  c.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      var rect = document.getElementById('diagram').getBoundingClientRect();
+      var newS = Math.max(MIN_S, Math.min(MAX_S, s * Math.exp(-e.deltaY * 0.0015)));
+      var f = newS / s;
+      tx -= (e.clientX - (rect.left + rect.width / 2)) * (f - 1);
+      ty -= (e.clientY - (rect.top + rect.height / 2)) * (f - 1);
+      s = newS;
+      applyTransform();
+      notifyZoom();
+    } else {
+      if (e.shiftKey) { tx -= e.deltaY; } else { tx -= e.deltaX; ty -= e.deltaY; }
+      applyTransform();
+    }
+  }, { passive: false });
+
+  // Double-click toggles fit <-> 1:1.
+  c.addEventListener('dblclick', function() {
+    if (Math.abs(s - 1) < 0.02) { fitToView(); } else { tx = 0; ty = 0; s = 1; applyTransform(); }
+    notifyZoom();
+  });
+
+  var dragging = false, startX = 0, startY = 0, startTx = 0, startTy = 0;
+  c.addEventListener('pointerdown', function(e) {
+    if (e.button !== 0) { return; }
+    dragging = true; startX = e.clientX; startY = e.clientY; startTx = tx; startTy = ty;
+    c.classList.add('dragging');
+    c.setPointerCapture(e.pointerId);
+  });
+  c.addEventListener('pointermove', function(e) {
+    if (!dragging) { return; }
+    tx = startTx + (e.clientX - startX);
+    ty = startTy + (e.clientY - startY);
+    applyTransform();
+  });
+  function endDrag(e) {
+    if (!dragging) { return; }
+    dragging = false;
+    c.classList.remove('dragging');
+    try { c.releasePointerCapture(e.pointerId); } catch (err) {}
+  }
+  c.addEventListener('pointerup', endDrag);
+  c.addEventListener('pointercancel', endDrag);
+  c.addEventListener('pointerleave', endDrag);
+});
+
 function exportSVG() {
-  var svg = document.querySelector('#diagram svg');
+  var svg = getSvg();
   if (!svg) { return; }
   var clone = svg.cloneNode(true);
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  // Always export at natural size, independent of the on-screen zoom.
+  clone.style.width = ''; clone.style.height = ''; clone.style.maxWidth = '';
   nebulaPost('svg', new XMLSerializer().serializeToString(clone));
 }
 
@@ -404,9 +527,11 @@ def mermaid_show_script(code):
     return f"window.nebulaShowDiagram({json.dumps(code)});"
 
 
+MERMAID_VERSION = "11.14.0"  # keep in sync with assets/mermaid/VERSION
+MATHJAX_VERSION = "3.2.2"    # keep in sync with assets/mathjax/VERSION
 CDN_ASSETS = {
-    "mermaid": "https://cdn.jsdelivr.net/npm/mermaid@11.17.2/dist/mermaid.min.js",
-    "mathjax": "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js",
+    "mermaid": f"https://cdn.jsdelivr.net/npm/mermaid@{MERMAID_VERSION}/dist/mermaid.min.js",
+    "mathjax": f"https://cdn.jsdelivr.net/npm/mathjax@{MATHJAX_VERSION}/es5/tex-svg-full.js",
 }
 
 
@@ -415,6 +540,8 @@ def build_standalone_html(content_html, dark_mode, copy_labels, custom_css="", t
     page = build_preview_shell(dark_mode, CDN_ASSETS, copy_labels, custom_css=custom_css)
     page = page.replace("<html>", f'<html lang="{html.escape(lang, quote=True)}">', 1)
     page = page.replace("<head>", f"<head><title>{html.escape(title)}</title>", 1)
+    # The in-app "full view" button has nothing to talk to in a browser.
+    page = page.replace("</style>", ".mermaid-fullview-btn { display: none; }\n</style>", 1)
     # "</" inside an inline script would end the tag early.
     script = preview_render_script(content_html).replace("</", "<\\/")
     render = f"<script>{script}</script>\n</body>"

@@ -10,7 +10,7 @@ import zlib
 
 from setuptools import setup
 
-from version import APP_NAME, BUILD_NUMBER, __version__
+from app_version import APP_NAME, APP_VERSION, BUILD_NUMBER
 
 APP = ['markdown_editor.py']
 BUNDLE_ID = os.environ.get('NEBULA_BUNDLE_ID', 'com.blueCode.NebulaNote')
@@ -32,7 +32,6 @@ if not hasattr(zlib, '__file__'):
 
     _py2app_command.copy_file = _copy_file
 
-VENDOR_FILES = sorted(glob.glob('assets/vendor/*'))
 LPROJ_DIRS = sorted(glob.glob('mas/lproj/*.lproj'))
 
 OPTIONS = {
@@ -43,7 +42,7 @@ OPTIONS = {
         'CFBundleDisplayName': APP_NAME,
         'CFBundleIdentifier': BUNDLE_ID,
         'CFBundleVersion': BUILD_NUMBER,
-        'CFBundleShortVersionString': __version__,
+        'CFBundleShortVersionString': APP_VERSION,
         'CFBundleDevelopmentRegion': 'en',
         'CFBundleLocalizations': ['en', 'ko', 'ja', 'zh-Hans'],
         'CFBundleAllowMixedLocalizations': True,
@@ -104,13 +103,13 @@ OPTIONS = {
     'excludes': ['tkinter', 'test', 'unittest', 'PIL', 'PyQt6.QtWebEngineCore', 'PyQt6.QtWebEngineWidgets',
                  'PyQt6.QtWebChannel', 'PyQt6.QtNetwork', 'PyQt6.QtBluetooth', 'PyQt6.QtMultimedia',
                  'PyQt6.QtPositioning', 'PyQt6.QtSensors', 'PyQt6.QtQml', 'PyQt6.QtQuick'],
-    'resources': ['icon.ico'] + LPROJ_DIRS,
+    # assets/ (Mermaid, MathJax) is copied whole into Contents/Resources/assets.
+    'resources': ['icon.ico', 'assets'] + LPROJ_DIRS,
 }
 
 setup(
     name=APP_NAME,
     app=APP,
-    data_files=[('assets/vendor', VENDOR_FILES)],
     options={'py2app': OPTIONS},
     setup_requires=['py2app'],
 )

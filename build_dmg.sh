@@ -7,8 +7,8 @@
 set -e
 
 cd "$(dirname "$0")"
-APP_NAME=$(python3 -c "import version; print(version.APP_NAME)")
-VERSION=$(python3 -c "import version; print(version.__version__)")
+APP_NAME=$(python3 -c "import app_version; print(app_version.APP_NAME)")
+VERSION=$(python3 -c "import app_version; print(app_version.APP_VERSION)")
 DMG_NAME="${APP_NAME}-${VERSION}"
 
 echo ""

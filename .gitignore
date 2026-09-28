@@ -9,3 +9,6 @@ build/
 build_mas.log
 *.pkg
 venv-mas/
+
+# Partner Center 계정 식별값 — 로컬 전용 (템플릿: msix/store_identity.example.json)
+msix/store_identity.json

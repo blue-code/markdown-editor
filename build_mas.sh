@@ -25,9 +25,9 @@ PYTHON="${NEBULA_PYTHON:-$(uv python find 3.12 2>/dev/null || true)}"
 [ -x "$PYTHON" ] || { echo "❌ Python 3.12 이 필요합니다: uv python install 3.12"; exit 1; }
 VENV="venv-mas"
 
-APP_NAME=$("$PYTHON" -c "import version; print(version.APP_NAME)")
-VERSION=$("$PYTHON" -c "import version; print(version.__version__)")
-BUILD_NUMBER=$("$PYTHON" -c "import version; print(version.BUILD_NUMBER)")
+APP_NAME=$("$PYTHON" -c "import app_version; print(app_version.APP_NAME)")
+VERSION=$("$PYTHON" -c "import app_version; print(app_version.APP_VERSION)")
+BUILD_NUMBER=$("$PYTHON" -c "import app_version; print(app_version.BUILD_NUMBER)")
 APP="dist/${APP_NAME}.app"
 PKG="dist/NebulaNote-${VERSION}-${BUILD_NUMBER}-mas.pkg"
 
@@ -114,7 +114,7 @@ if [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ]; then
     xcrun altool --validate-app -f "$PKG" -t macos --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
     if [ "$MODE" = "--upload" ]; then
         xcrun altool --upload-app -f "$PKG" -t macos --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
-        echo "✅ 업로드 완료. 다음 업로드 전에 version.py 의 BUILD_NUMBER 를 올리세요."
+        echo "✅ 업로드 완료. 다음 업로드 전에 app_version.py 의 BUILD_NUMBER 를 올리세요."
     fi
 else
     echo "ℹ️  ASC_KEY_ID / ASC_ISSUER_ID 가 없어 검증/업로드를 건너뜁니다."

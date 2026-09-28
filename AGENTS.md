@@ -9,7 +9,7 @@ This is a Python desktop app built with PyQt6.
 - `mermaid_utils.py`, `markdown_tools.py`: pure helpers.
 - `tests/`: unittest suites.
 - Build and packaging scripts: `build_exe.bat`, `build_installer.bat`, `build_dmg.sh`, `build_mas.sh` (Mac App Store), `setup.py`, `installer.nsi`, `mas/`.
-- Version lives in `version.py` only; build scripts read it.
+- Version lives in `app_version.py` only (`APP_VERSION`, plus `BUILD_NUMBER` for Mac App Store uploads); build scripts read it.
 - Assets: `icon.ico`, `icon_source.png`, `splash.png`.
 
 Keep new code in focused modules. If a feature is reusable, move logic out of `markdown_editor.py` into a helper module and add tests.
@@ -22,6 +22,7 @@ Keep new code in focused modules. If a feature is reusable, move logic out of `m
 - `python -m py_compile markdown_editor.py mermaid_utils.py`: quick syntax check.
 - `build_exe.bat`: build Windows executable.
 - `build_installer.bat`: build NSIS installer (requires NSIS in PATH).
+- `build_msix.ps1`: build Microsoft Store MSIX package (requires Windows SDK, fill `msix/store_identity.json`). See `docs/MS_STORE_배포가이드.md`.
 - build 후에 dmg나, exe 파일에 버전 정보를 자동으로 붙여줘.  업데이트 할 때마다 그 성격 메이저, 마이터에 따라 버전정보를 업데이트 해줘.
 
 ## Coding Style & Naming Conventions

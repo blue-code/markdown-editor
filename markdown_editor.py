@@ -45,17 +45,20 @@ from localized_content import (
     FEATURED_MERMAID_IDS, autocomplete_items, default_snippets, example_templates, mermaid_examples
 )
 from markdown_tools import format_markdown_tables
-from mermaid_utils import extract_mermaid_blocks
+from mermaid_utils import extract_mermaid_blocks, mermaid_block_at
 from preview_html import (
     build_mermaid_viewer_shell, build_preview_shell, build_standalone_html, inline_local_images,
-    markdown_to_html, mermaid_show_script, preview_render_script
+    markdown_to_html, mermaid_show_script, preview_render_script, MATHJAX_VERSION, MERMAID_VERSION
 )
-from version import APP_NAME, __version__
+from app_version import APP_NAME, APP_VERSION
 from web_view import WebView
 
 CONFIG_FILE = user_file(".markdownpro_config.json")
 BACKUP_DIR = user_file(".markdownpro_backups")
 SNIPPETS_FILE = user_file(".markdownpro_snippets.json")
+DRAFT_FILE = user_file(".markdownpro_draft.json")
+MARKDOWN_EXTENSIONS = {".md", ".markdown", ".txt", ".mkd", ".mdown"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp", ".tiff", ".tif", ".ico"}
 
 # Static HTML shell pages for the web views are written here once per launch.
 SHELL_DIR = tempfile.mkdtemp(prefix="nebula-note-")
@@ -69,10 +72,10 @@ def bundled_assets():
     folder of the page it loads, not the app bundle.
     """
     urls = {}
-    for key, name in (("mermaid", "mermaid.min.js"), ("mathjax", "tex-svg.js")):
+    for key, folder, name in (("mermaid", "mermaid", "mermaid.min.js"), ("mathjax", "mathjax", "tex-svg-full.js")):
         target = os.path.join(SHELL_DIR, name)
         if not os.path.exists(target):
-            shutil.copyfile(resource_path(os.path.join("assets", "vendor", name)), target)
+            shutil.copyfile(resource_path(os.path.join("assets", folder, name)), target)
         urls[key] = QUrl.fromLocalFile(target).toString()
     return urls
 
@@ -90,7 +93,8 @@ def native_shortcut(sequence):
 
 
 def copy_labels():
-    return {"copy": tr("preview.copy"), "copied": tr("preview.copied"), "failed": tr("preview.copy_failed")}
+    return {"copy": tr("preview.copy"), "copied": tr("preview.copied"), "failed": tr("preview.copy_failed"),
+            "fullview": tr("preview.fullview"), "fullview_tip": tr("preview.fullview_tip")}
 
 
 def apply_native_appearance(dark_mode):
@@ -715,6 +719,7 @@ class MermaidViewer(QMainWindow):
         self.is_fullscreen = False
         self.pending_save_path = None
         self.setup_ui()
+        self._setup_shortcuts()
         self.load_shell()
         self.set_mermaid_blocks(self.mermaid_blocks, self.current_index, fallback_code=self.mermaid_code)
 
@@ -825,6 +830,27 @@ class MermaidViewer(QMainWindow):
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
 
+    def _setup_shortcuts(self):
+        # 뷰어 전용 단축키 — 마우스 없이 키보드만으로 조작
+        for keys, slot in [
+            ("Left", self.prev_diagram),
+            ("Right", self.next_diagram),
+            ("0", lambda: self.zoom_slider.setValue(100)),
+            ("F", self.fit_to_view),
+            ("Escape", self.escape_pressed),
+            ("F11", self.toggle_fullscreen),
+            ("Ctrl++", self.zoom_in),
+            ("Ctrl+=", self.zoom_in),
+            ("Ctrl+-", self.zoom_out),
+        ]:
+            QShortcut(QKeySequence(keys), self, slot)
+
+    def escape_pressed(self):
+        if self.is_fullscreen:
+            self.toggle_fullscreen()
+        else:
+            self.close()
+
     def load_shell(self):
         html = build_mermaid_viewer_shell(self.dark_mode, bundled_assets(), WebView.BRIDGE_HEAD)
         name = "viewer-dark.html" if self.dark_mode else "viewer-light.html"
@@ -882,6 +908,15 @@ class MermaidViewer(QMainWindow):
         self.zoom_label.setText(f"{value}%")
         self.web_view.run_js(f"setZoom({value})")
 
+    def on_zoom_from_js(self, percent):
+        # 휠 줌 → 슬라이더 동기화. 슬라이더 시그널을 막아 재진입 방지.
+        percent = max(self.zoom_slider.minimum(), min(self.zoom_slider.maximum(), int(percent)))
+        self.zoom_level = percent
+        self.zoom_label.setText(f"{percent}%")
+        self.zoom_slider.blockSignals(True)
+        self.zoom_slider.setValue(percent)
+        self.zoom_slider.blockSignals(False)
+
     def zoom_in(self):
         self.zoom_slider.setValue(min(self.zoom_level + 25, 500))
 
@@ -889,7 +924,7 @@ class MermaidViewer(QMainWindow):
         self.zoom_slider.setValue(max(self.zoom_level - 25, 10))
 
     def fit_to_view(self):
-        self.web_view.run_js("fitToView()", lambda v: self.zoom_slider.setValue(int(v)) if v else None)
+        self.web_view.run_js("fitToView()", lambda v: self.on_zoom_from_js(int(v)) if v else None)
 
     def toggle_fullscreen(self):
         if self.is_fullscreen:
@@ -918,6 +953,8 @@ class MermaidViewer(QMainWindow):
             self.save_svg_data(data)
         elif name == "png":
             self.save_png_data(data)
+        elif name == "zoom" and data.isdigit():
+            self.on_zoom_from_js(int(data))
 
     def save_svg_data(self, data):
         if self.pending_save_path and data:
@@ -944,20 +981,6 @@ class MermaidViewer(QMainWindow):
 
     def update_mermaid_blocks(self, blocks, index=0):
         self.set_mermaid_blocks(blocks, index=index)
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape and self.is_fullscreen:
-            self.toggle_fullscreen()
-        elif event.key() == Qt.Key.Key_F11:
-            self.toggle_fullscreen()
-        elif event.key() in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
-            self.zoom_in()
-        elif event.key() == Qt.Key.Key_Minus:
-            self.zoom_out()
-        elif event.key() == Qt.Key.Key_0:
-            self.zoom_slider.setValue(100)
-        else:
-            super().keyPressEvent(event)
 
 
 # ============== 사이드 패널 ==============
@@ -1148,6 +1171,10 @@ class FileExplorerPanel(QWidget):
         self.tree.setHeaderHidden(True)
         self.tree.doubleClicked.connect(self.on_double_click)
         self.tree.hide()
+
+        # QFileSystemModel 은 디렉터리를 비동기로 읽으므로, 로드 완료 신호를 받아 대상 파일을 선택한다.
+        self._pending_reveal = None
+        self.model.directoryLoaded.connect(lambda _path: self._select_pending())
         layout.addWidget(self.tree)
 
         self.root_path = ""
@@ -1176,6 +1203,25 @@ class FileExplorerPanel(QWidget):
         file_path = self.model.filePath(index)
         if not self.model.isDir(index):
             self.file_clicked.emit(file_path)
+
+    def reveal_path(self, file_path):
+        """열린 파일이 있는 폴더로 탐색기 루트를 옮기고 해당 파일을 선택한다."""
+        if not file_io.is_file(file_path):
+            return
+        abs_path = os.path.abspath(file_path)
+        self._pending_reveal = abs_path
+        self.set_root_path(os.path.dirname(abs_path))
+        # 이미 로드된 폴더라면 directoryLoaded 가 오지 않을 수 있어 즉시도 시도한다.
+        self._select_pending()
+
+    def _select_pending(self):
+        if not self._pending_reveal:
+            return
+        index = self.model.index(self._pending_reveal)
+        if index.isValid():
+            self.tree.setCurrentIndex(index)
+            self.tree.scrollTo(index)
+            self._pending_reveal = None
 
 
 class CheatSheetPanel(QWidget):
@@ -1236,6 +1282,15 @@ class MarkdownEditor(QMainWindow):
         self.recent_files = []
         self.language_setting = "system"
         self.explorer_root = ""
+        # 마지막으로 열었던 파일 — 다음 실행 시 자동 복원
+        self.last_file = ""
+        # 동기 스크롤 — 토글 + 디바운스
+        self.sync_scroll_enabled = True
+        self._pending_sync_value = 0
+        self._sync_scroll_timer = QTimer()
+        self._sync_scroll_timer.setSingleShot(True)
+        self._sync_scroll_timer.setInterval(40)
+        self._sync_scroll_timer.timeout.connect(self._do_sync_scroll)
         self.mermaid_viewer = None
         self.snippets = default_snippets(current_language())
         self.word_goal = 0
@@ -1276,6 +1331,8 @@ class MarkdownEditor(QMainWindow):
         self.custom_css_path = cfg.get('custom_css_path', "")
         self.language_setting = cfg.get('language', "system")
         self.explorer_root = cfg.get('explorer_root', "")
+        self.last_file = cfg.get('last_file', "")
+        self.sync_scroll_enabled = cfg.get('sync_scroll', True)
 
     def save_settings(self):
         self.recent_files = self.recent_files[:10]
@@ -1288,6 +1345,8 @@ class MarkdownEditor(QMainWindow):
                     'custom_css_path': self.custom_css_path,
                     'language': self.language_setting,
                     'explorer_root': self.explorer_root,
+                    'last_file': self.current_file or "",
+                    'sync_scroll': self.sync_scroll_enabled,
                 }, f)
         except OSError:
             pass
@@ -1358,6 +1417,13 @@ class MarkdownEditor(QMainWindow):
         self.editor.textChanged.connect(self.on_text_changed)
         self.editor.cursorPositionChanged.connect(self.update_cursor_pos)
         self.editor.verticalScrollBar().valueChanged.connect(self.sync_scroll)
+
+        # 우클릭 메뉴 — Mermaid 블록 위에서는 뷰어 열기/코드 복사 항목 추가
+        self.editor.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.editor.customContextMenuRequested.connect(self._on_editor_context_menu)
+        # 드롭은 메인 윈도우에서 받아 이미지/문서를 처리
+        self.editor.setAcceptDrops(False)
+        self.setAcceptDrops(True)
 
         # 탭 키 처리 (스니펫)
         self.editor.installEventFilter(self)
@@ -1524,6 +1590,11 @@ class MarkdownEditor(QMainWindow):
         self.sidebar_act.setCheckable(True)
         self.sidebar_act.setChecked(True)
 
+        self.sync_scroll_act = self._add_action(view_menu, tr("view.sync_scroll"),
+                                                lambda checked: self.toggle_sync_scroll(checked))
+        self.sync_scroll_act.setCheckable(True)
+        self.sync_scroll_act.setChecked(self.sync_scroll_enabled)
+
         view_menu.addSeparator()
         self.focus_act = self._add_action(view_menu, tr("view.focus"), self.toggle_focus_mode, QKeySequence("F11"))
         self.focus_act.setCheckable(True)
@@ -1620,8 +1691,9 @@ class MarkdownEditor(QMainWindow):
             s.activated.connect(cb)
 
     def setup_auto_save(self):
+        # 30초마다 자동 저장 — 디스크 파일은 평소대로, 미저장 버퍼는 DRAFT_FILE 로 보존
         self.auto_save_timer.timeout.connect(self.auto_save)
-        self.auto_save_timer.start(60000)
+        self.auto_save_timer.start(30000)
 
     def setup_file_check(self):
         self.file_check_timer.timeout.connect(self.check_external_file_change)
@@ -1680,11 +1752,22 @@ class MarkdownEditor(QMainWindow):
             self.goal_progress.hide()
 
     def sync_scroll(self, value):
-        if not self.preview.isVisible():
+        # 디바운스 — 매 스크롤 이벤트마다 JS 를 호출하지 않도록
+        if not self.sync_scroll_enabled or not self.preview.isVisible():
             return
+        self._pending_sync_value = value
+        if not self._sync_scroll_timer.isActive():
+            self._sync_scroll_timer.start()
+
+    def _do_sync_scroll(self):
         max_val = self.editor.verticalScrollBar().maximum()
         if max_val > 0:
-            self.preview.run_js(f"setScroll({value / max_val})")
+            self.preview.run_js(f"setScroll({self._pending_sync_value / max_val})")
+
+    def toggle_sync_scroll(self, enabled=None):
+        self.sync_scroll_enabled = (not self.sync_scroll_enabled) if enabled is None else bool(enabled)
+        self.status_bar.showMessage(tr("msg.sync_on") if self.sync_scroll_enabled else tr("msg.sync_off"), 2000)
+        self.save_settings()
 
     def update_cursor_pos(self):
         cursor = self.editor.textCursor()
@@ -1706,6 +1789,8 @@ class MarkdownEditor(QMainWindow):
     def on_preview_message(self, name, data):
         if name == "copy":
             QApplication.clipboard().setText(data)
+        elif name == "openMermaid" and data.isdigit():
+            self.open_mermaid_viewer_at(int(data))
 
     def _read_custom_css(self):
         if self.custom_css_path:
@@ -1793,6 +1878,7 @@ class MarkdownEditor(QMainWindow):
             self.is_modified = False
             self._disk_state = None
             self.update_title()
+            self._clear_draft()
 
     def open_file(self, path=None, ask_to_save=True):
         if ask_to_save and not self.check_save():
@@ -1816,6 +1902,9 @@ class MarkdownEditor(QMainWindow):
             self._disk_state = self._get_disk_state(path)
             self.update_title()
             self.add_to_recent(path)
+            self._clear_draft()
+            # 왼쪽 탐색기를 이 파일이 있는 폴더로 이동시키고 파일을 선택 표시
+            self.file_panel.reveal_path(path)
             self.update_preview()
         except FileAccessError as e:
             if e.permission_denied:
@@ -1848,6 +1937,7 @@ class MarkdownEditor(QMainWindow):
             self.update_title()
             self.add_to_recent(path)
             self.status_bar.showMessage(tr("msg.saved", path=path), 3000)
+            self._clear_draft()
             return True
         except OSError as e:
             QMessageBox.critical(self, tr("common.error"), str(e))
@@ -1856,8 +1946,68 @@ class MarkdownEditor(QMainWindow):
             self._suspend_file_check = False
 
     def auto_save(self):
+        # 1) 디스크 파일이 있으면 평소대로 저장
         if self.current_file and self.is_modified:
             self._save(self.current_file)
+        # 2) 미저장(제목 없음)이거나 저장 실패로 변경이 남았으면 드래프트로 따로 보존
+        if self.is_modified:
+            self._write_draft()
+        else:
+            self._clear_draft()
+
+    def _write_draft(self):
+        payload = {
+            "saved_at": datetime.now().isoformat(timespec="seconds"),
+            "current_file": self.current_file,
+            "content": self.editor.toPlainText(),
+        }
+        try:
+            with open(DRAFT_FILE, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False)
+        except OSError:
+            pass
+
+    def _clear_draft(self):
+        try:
+            os.remove(DRAFT_FILE)
+        except OSError:
+            pass
+
+    def _maybe_recover_draft(self):
+        """시작 시 호출. 드래프트가 있으면 사용자에게 복구 여부 확인."""
+        try:
+            with open(DRAFT_FILE, "r", encoding="utf-8") as f:
+                draft = json.load(f)
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError):
+            self._clear_draft()
+            return
+        content = draft.get("content", "")
+        if not content.strip():
+            self._clear_draft()
+            return
+        reply = QMessageBox.question(
+            self, tr("draft.title"),
+            tr("draft.text", file=draft.get("current_file") or tr("draft.untitled"),
+               saved_at=draft.get("saved_at", "?")),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.editor.setPlainText(content)
+            self.current_file = draft.get("current_file")
+            self.is_modified = True
+            self.update_title()
+            self.status_bar.showMessage(tr("draft.recovered"), 4000)
+        else:
+            self._clear_draft()
+
+    def restore_startup_state(self):
+        """드래프트 복구를 먼저 확인하고, 복구한 내용이 없으면 마지막으로 열었던 파일을 연다."""
+        self._maybe_recover_draft()
+        if self.current_file is None and not self.editor.toPlainText().strip():
+            if self.last_file and file_io.is_file(self.last_file):
+                self.open_file(self.last_file, ask_to_save=False)
 
     def check_save(self):
         if self.is_modified:
@@ -2093,17 +2243,34 @@ class MarkdownEditor(QMainWindow):
         QMessageBox.information(self, tr("msg.language_title"), tr("msg.language_restart"))
 
     # ===== Mermaid =====
+    def _on_editor_context_menu(self, pos):
+        menu = self.editor.createStandardContextMenu()
+        position = self.editor.cursorForPosition(pos).position()
+        hit = mermaid_block_at(self.editor.toPlainText(), position)
+        if hit is not None:
+            index, code = hit
+            menu.addSeparator()
+            open_act = menu.addAction(tr("ctx.open_viewer", index=index + 1))
+            open_act.triggered.connect(lambda _=False, i=index: self.open_mermaid_viewer_at(i))
+            copy_act = menu.addAction(tr("ctx.copy_chart"))
+            copy_act.triggered.connect(lambda _=False, c=code: QApplication.clipboard().setText(c))
+        menu.exec(self.editor.mapToGlobal(pos))
+
     def open_mermaid_viewer(self):
+        self.open_mermaid_viewer_at(0)
+
+    def open_mermaid_viewer_at(self, index=0):
         blocks = extract_mermaid_blocks(self.editor.toPlainText())
         if not blocks:
             blocks = [MermaidViewer.default_mermaid_code()]
+        index = max(0, min(int(index), len(blocks) - 1))
 
         if self.mermaid_viewer is None or not self.mermaid_viewer.isVisible():
-            self.mermaid_viewer = MermaidViewer(blocks[0], self.dark_mode, self,
-                                                mermaid_blocks=blocks, current_index=0)
+            self.mermaid_viewer = MermaidViewer(blocks[index], self.dark_mode, self,
+                                                mermaid_blocks=blocks, current_index=index)
             self.mermaid_viewer.show()
         else:
-            self.mermaid_viewer.update_mermaid_blocks(blocks, index=0)
+            self.mermaid_viewer.update_mermaid_blocks(blocks, index=index)
             self.mermaid_viewer.raise_()
             self.mermaid_viewer.activateWindow()
 
@@ -2186,9 +2353,10 @@ class MarkdownEditor(QMainWindow):
                     tr("about.f_dark"), tr("about.f_languages")]
         items = "".join(f"<li>{feature}</li>" for feature in features)
         QMessageBox.about(self, APP_NAME,
-                          f"<h2>{APP_NAME} {__version__}</h2>"
+                          f"<h2>{APP_NAME} {APP_VERSION}</h2>"
                           f"<p>{tr('about.subtitle')}</p><hr>"
                           f"<p><b>{tr('about.features')}:</b></p><ul>{items}</ul>"
+                          f"<p><b>{tr('about.bundled')}:</b> Mermaid {MERMAID_VERSION}, MathJax {MATHJAX_VERSION}</p>"
                           f"<p style='color:#888;font-size:11px'>{tr('about.licenses')}</p>")
 
     def show_shortcuts(self):
@@ -2204,7 +2372,18 @@ class MarkdownEditor(QMainWindow):
             f"<tr><td><b>{native_shortcut(key) if key else headings}</b></td><td>{tr(label)}</td></tr>"
             for key, label in rows
         )
-        QMessageBox.information(self, tr("help.shortcuts"), f"<h3>{tr('shortcuts.title')}</h3><table>{table}</table>")
+        viewer_rows = [
+            ("← / →", "sv.prev_next"), ("F", "sv.fit"), ("0", "sv.actual"),
+            (f"{native_shortcut('Ctrl++')} / {native_shortcut('Ctrl+-')}", "sv.zoom"),
+            (f"{native_shortcut('Ctrl')}+{tr('key.wheel')}", "sv.wheel_zoom"),
+            (f"{tr('key.wheel')} / Shift+{tr('key.wheel')}", "sv.pan"),
+            (tr("key.drag"), "sv.drag"), (tr("key.dblclick"), "sv.dblclick"),
+            ("F11", "sv.fullscreen"), ("Esc", "sv.close"),
+        ]
+        viewer_table = "".join(f"<tr><td><b>{key}</b></td><td>{tr(label)}</td></tr>" for key, label in viewer_rows)
+        QMessageBox.information(self, tr("help.shortcuts"),
+                                f"<h3>{tr('shortcuts.editor')}</h3><table>{table}</table>"
+                                f"<h3>{tr('shortcuts.viewer')}</h3><table>{viewer_table}</table>")
 
     def closeEvent(self, event):
         if not self.check_save():
@@ -2212,9 +2391,95 @@ class MarkdownEditor(QMainWindow):
             return
         self.save_settings()
         self.save_snippets()
+        # 저장(또는 폐기)을 마쳤으니 드래프트는 더 이상 필요 없음. Discard 했다면 modified 가 남아 있다.
+        if not self.is_modified:
+            self._clear_draft()
         if self.mermaid_viewer is not None:
             self.mermaid_viewer.close()
         event.accept()
+
+    # ===== 드래그&드롭 (이미지 자동 저장 + 링크 삽입, 문서 열기) =====
+    def dragEnterEvent(self, event):
+        mime = event.mimeData()
+        if mime.hasUrls() and any(u.isLocalFile() for u in mime.urls()):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        images = [p for p in paths if os.path.splitext(p)[1].lower() in IMAGE_EXTENSIONS]
+        others = [p for p in paths if p not in images]
+        if images:
+            self._handle_image_drop(images)
+            event.acceptProposedAction()
+        elif len(others) == 1 and os.path.splitext(others[0])[1].lower() in MARKDOWN_EXTENSIONS:
+            self.open_file(others[0])
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def _handle_image_drop(self, image_paths):
+        # 현재 문서 옆 assets/ 에 복사하고 상대 경로 링크를 삽입한다.
+        if not self.current_file:
+            QMessageBox.information(self, tr("drop.title"), tr("drop.save_first"))
+            return
+        doc_dir = os.path.dirname(os.path.abspath(self.current_file))
+        assets_dir = os.path.join(doc_dir, "assets")
+        if not QDir().mkpath(assets_dir):
+            QMessageBox.critical(self, tr("common.error"), tr("drop.folder_failed", error=assets_dir))
+            return
+
+        inserted = []
+        for src in image_paths:
+            dst = unique_destination(assets_dir, os.path.basename(src), src)
+            try:
+                if not file_io.exists(dst):
+                    file_io.write_bytes(dst, file_io.read_bytes(src))
+            except OSError as e:
+                QMessageBox.critical(self, tr("common.error"), tr("drop.copy_failed", error=e))
+                continue
+            rel = os.path.relpath(dst, doc_dir).replace(os.sep, "/")
+            inserted.append(f"![{os.path.splitext(os.path.basename(dst))[0]}]({rel})")
+
+        if inserted:
+            self.editor.textCursor().insertText("\n".join(inserted) + "\n")
+            self.status_bar.showMessage(tr("drop.inserted", count=len(inserted)), 3000)
+
+
+def unique_destination(folder, file_name, source):
+    """Target path in folder for file_name; adds _1, _2... instead of overwriting a different file."""
+    stem, ext = os.path.splitext(file_name)
+    candidate = os.path.join(folder, file_name)
+    counter = 1
+    while file_io.exists(candidate) and not same_file(source, candidate):
+        candidate = os.path.join(folder, f"{stem}_{counter}{ext}")
+        counter += 1
+    return candidate
+
+
+def same_file(a, b):
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def is_msix_packaged():
+    """스토어(MSIX) 설치본으로 실행 중인지 여부."""
+    if sys.platform != 'win32':
+        return False
+    try:
+        import ctypes
+        length = ctypes.c_uint32(0)
+        # 버퍼 없이 호출: 패키지면 ERROR_INSUFFICIENT_BUFFER(122), 아니면 APPMODEL_ERROR_NO_PACKAGE(15700)
+        return ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(length), None) != 15700
+    except (AttributeError, OSError):
+        return False
 
 
 class NebulaApplication(QApplication):
@@ -2249,13 +2514,14 @@ def install_translations(app, language):
 
 def main():
     # Windows Taskbar Icon Fix
-    if sys.platform == 'win32':
+    # MSIX 패키지 안에서는 OS 가 AUMID 를 부여한다. 직접 덮어쓰면 작업 표시줄 고정/그룹핑이 어긋난다.
+    if sys.platform == 'win32' and not is_msix_packaged():
         import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('nebulanote.editor')
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('nebulanote.editor.v1')
 
     app = NebulaApplication(sys.argv)
     app.setApplicationName(APP_NAME)
-    app.setApplicationVersion(__version__)
+    app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName(APP_NAME)
     if sys.platform != "darwin":
         # macOS는 번들의 .icns 아이콘을 사용
@@ -2273,13 +2539,6 @@ def main():
     app.window = window
     window.show()
 
-    # Close splash screen if it exists (PyInstaller)
-    try:
-        import pyi_splash
-        pyi_splash.close()
-    except ImportError:
-        pass
-
     initial_files = list(app.pending_files)
     if len(sys.argv) > 1 and file_io.exists(sys.argv[1]):
         initial_files.append(sys.argv[1])
@@ -2287,6 +2546,9 @@ def main():
     if initial_files:
         # 초기 파일 열기 시 저장 프롬프트 방지
         QTimer.singleShot(100, lambda: window.open_file(initial_files[-1], ask_to_save=False))
+    else:
+        # 명시적인 파일이 없으면 드래프트 복구 → 마지막 파일 자동 복원
+        QTimer.singleShot(150, window.restore_startup_state)
 
     sys.exit(app.exec())
 

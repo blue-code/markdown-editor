@@ -1,0 +1,5 @@
+mathjax 3.2.2 (tex-svg-full)
+source: https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg-full.js
+license: Apache-2.0 (see LICENSE)
+bundled: 2026-05-08
+note: SVG 출력은 폰트가 JS에 인라인되어 단일 파일로 완전 오프라인 동작

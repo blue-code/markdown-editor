@@ -1,7 +1,7 @@
 DOCS = {
 "en": """# Product Launch Plan
 
-Ship **Nebula Note 3.1** to the Mac App Store with *live* Mermaid diagrams and math.
+Ship **Nebula Note 1.3** to the Mac App Store with *live* Mermaid diagrams and math.
 
 ## Timeline
 
@@ -32,7 +32,7 @@ def launch(version):
 """,
 "ko": """# 제품 출시 계획
 
-실시간 Mermaid 다이어그램과 수식을 담아 **Nebula Note 3.1**을 *Mac App Store*에 출시합니다.
+실시간 Mermaid 다이어그램과 수식을 담아 **Nebula Note 1.3**을 *Mac App Store*에 출시합니다.
 
 ## 일정
 
@@ -63,7 +63,7 @@ def launch(version):
 """,
 "ja": """# 製品リリース計画
 
-リアルタイムの Mermaid 図と数式を備えた **Nebula Note 3.1** を *Mac App Store* でリリースします。
+リアルタイムの Mermaid 図と数式を備えた **Nebula Note 1.3** を *Mac App Store* でリリースします。
 
 ## スケジュール
 
@@ -94,7 +94,7 @@ def launch(version):
 """,
 "zh": """# 产品发布计划
 
-带着实时 Mermaid 图表和数学公式，将 **Nebula Note 3.1** 发布到 *Mac App Store*。
+带着实时 Mermaid 图表和数学公式，将 **Nebula Note 1.3** 发布到 *Mac App Store*。
 
 ## 时间表
 

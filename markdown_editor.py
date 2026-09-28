@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Nebula Note v1.0 - Pure & Sexy Markdown Editor
+Nebula Note - Pure & Sexy Markdown Editor
 Features: Mermaid 전체 지원, 포커스 모드, 문서 개요, 통계, 스니펫 등
 """
 
@@ -15,6 +15,8 @@ import unicodedata
 from pathlib import Path
 from datetime import datetime
 from collections import Counter
+
+from app_version import APP_VERSION
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -3649,7 +3651,7 @@ mermaid.run({{ querySelector: '.mermaid' }});
     # ===== 도움말 =====
     def show_about(self):
         QMessageBox.about(self, "Nebula Note",
-            f"<h2>Nebula Note v1.0</h2>"
+            f"<h2>Nebula Note v{APP_VERSION}</h2>"
             f"<p>프로페셔널 마크다운 에디터</p>"
             f"<hr>"
             f"<p><b>주요 기능:</b></p>"
@@ -3812,9 +3814,22 @@ def resource_path(relative_path):
 
     return os.path.join(base_path, relative_path)
 
+def is_msix_packaged():
+    """스토어(MSIX) 설치본으로 실행 중인지 여부."""
+    if sys.platform != 'win32':
+        return False
+    try:
+        import ctypes
+        length = ctypes.c_uint32(0)
+        # 버퍼 없이 호출: 패키지면 ERROR_INSUFFICIENT_BUFFER(122), 아니면 APPMODEL_ERROR_NO_PACKAGE(15700)
+        return ctypes.windll.kernel32.GetCurrentPackageFullName(ctypes.byref(length), None) != 15700
+    except (AttributeError, OSError):
+        return False
+
 def main():
     # Windows Taskbar Icon Fix
-    if sys.platform == 'win32':
+    # MSIX 패키지 안에서는 OS 가 AUMID 를 부여한다. 직접 덮어쓰면 작업 표시줄 고정/그룹핑이 패키지와 어긋난다
+    if sys.platform == 'win32' and not is_msix_packaged():
         import ctypes
         myappid = 'nebulanote.editor.v1' # arbitrary string
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)

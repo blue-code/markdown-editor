@@ -18,6 +18,7 @@ Keep new code in focused modules. If a feature is reusable, move logic out of `m
 - `python -m py_compile markdown_editor.py mermaid_utils.py`: quick syntax check.
 - `build_exe.bat`: build Windows executable.
 - `build_installer.bat`: build NSIS installer (requires NSIS in PATH).
+- `build_msix.ps1`: build Microsoft Store MSIX package (requires Windows SDK, fill `msix/store_identity.json`). See `docs/MS_STORE_배포가이드.md`.
 - build 후에 dmg나, exe 파일에 버전 정보를 자동으로 붙여줘.  업데이트 할 때마다 그 성격 메이저, 마이터에 따라 버전정보를 업데이트 해줘.
 
 ## Coding Style & Naming Conventions

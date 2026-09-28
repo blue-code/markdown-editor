@@ -1,11 +1,13 @@
 !include "MUI2.nsh"
 
 !define APP_NAME "Nebula Note"
-!define APP_VERSION "3.0.0"
+!ifndef APP_VERSION
+  !define APP_VERSION "0.0.0"
+!endif
 !define APP_EXE "Nebula Note.exe"
 
 Name "${APP_NAME}"
-OutFile "dist\\NebulaNote-Setup.exe"
+OutFile "dist\\NebulaNote-${APP_VERSION}-Setup.exe"
 InstallDir "$PROGRAMFILES\\${APP_NAME}"
 InstallDirRegKey HKLM "Software\\${APP_NAME}" "InstallDir"
 RequestExecutionLevel admin
@@ -26,6 +28,9 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_UNPAGE_FINISH
 
 !insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "Korean"
+!insertmacro MUI_LANGUAGE "Japanese"
+!insertmacro MUI_LANGUAGE "SimpChinese"
 
 Section "App" SEC_APP
   SetShellVarContext all

@@ -1,0 +1,2 @@
+mermaid 11.17.2 (MIT)
+mathjax 3.2.2 (Apache-2.0)

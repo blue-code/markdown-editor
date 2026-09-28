@@ -25,6 +25,9 @@ if not exist venv (
 )
 call venv\Scripts\activate
 
+for /f "delims=" %%v in ('python -c "import version; print(version.__version__)"') do set "APP_VERSION=%%v"
+echo Version: %APP_VERSION%
+
 :: 3. Install Dependencies
 echo [3/5] Installing dependencies...
 python -m pip install --upgrade pip
@@ -42,6 +45,7 @@ python -m PyInstaller --noconfirm --windowed ^
     --icon "icon.ico" ^
     --splash "splash.png" ^
     --add-data "icon.ico;." ^
+    --add-data "assets\vendor;assets\vendor" ^
     markdown_editor.py
 
 if %errorlevel% neq 0 (
@@ -60,6 +64,10 @@ echo ======================================================
 echo [*] Executable Build Success!
 echo Location: dist\Nebula Note\Nebula Note.exe
 echo ======================================================
+
+:: Versioned portable archive
+powershell -NoProfile -Command "Compress-Archive -Force -Path 'dist\Nebula Note' -DestinationPath 'dist\NebulaNote-%APP_VERSION%-win64.zip'"
+if exist "dist\NebulaNote-%APP_VERSION%-win64.zip" echo Portable: dist\NebulaNote-%APP_VERSION%-win64.zip
 
 if defined SKIP_INSTALLER (
     echo [Notice] Skipping installer build as requested.
@@ -92,12 +100,12 @@ goto :build_done
 :run_nsis
 echo.
 echo [5/5] NSIS detected! Building Setup Installer...
-"%MAKENSIS_CMD%" installer.nsi
-if exist "dist\NebulaNote-Setup.exe" (
+"%MAKENSIS_CMD%" /DAPP_VERSION=%APP_VERSION% installer.nsi
+if exist "dist\NebulaNote-%APP_VERSION%-Setup.exe" (
     echo.
     echo ======================================================
     echo [*] Setup Installer Build Success!
-    echo Location: dist\NebulaNote-Setup.exe
+    echo Location: dist\NebulaNote-%APP_VERSION%-Setup.exe
     echo ======================================================
 ) else (
     echo Error: Installer build failed. Check installer.nsi logs.

@@ -1,31 +1,56 @@
 """
-py2app 설정 파일 - MarkdownPro macOS 앱 빌드
-사용법: python setup.py py2app
+py2app 설정 파일 - Nebula Note macOS 앱 빌드
+사용법: python setup.py py2app   (보통 build_dmg.sh / build_mas.sh 가 호출)
 """
 
-from setuptools import setup
 import os
+import glob
+
+import zlib
+
+from setuptools import setup
+
+from version import APP_NAME, BUILD_NUMBER, __version__
 
 APP = ['markdown_editor.py']
+BUNDLE_ID = os.environ.get('NEBULA_BUNDLE_ID', 'com.blueCode.NebulaNote')
+# build_mas.sh sets this after inspecting the bundled binaries; 12.0 is the floor for WKWebView printing APIs.
+MIN_MACOS = os.environ.get('NEBULA_MIN_MACOS', '12.0')
 
-LIBFFI_CANDIDATES = [
-    '/opt/homebrew/opt/libffi/lib/libffi.8.dylib',
-    '/usr/local/opt/libffi/lib/libffi.8.dylib',
-]
-LIBFFI_FRAMEWORKS = [p for p in LIBFFI_CANDIDATES if os.path.exists(p)]
+if not hasattr(zlib, '__file__'):
+    # python-build-standalone links zlib into the interpreter. py2app copies zlib's extension module
+    # only so the zipped stdlib can be imported, which a built-in zlib already covers.
+    from py2app.build_app import py2app as _py2app_command
 
-DATA_FILES = ['icon.ico']
+    zlib.__file__ = None
+    _original_copy_file = _py2app_command.copy_file
+
+    def _copy_file(self, src, *args, **kwargs):
+        if src is None:
+            return (None, 0)
+        return _original_copy_file(self, src, *args, **kwargs)
+
+    _py2app_command.copy_file = _copy_file
+
+VENDOR_FILES = sorted(glob.glob('assets/vendor/*'))
+LPROJ_DIRS = sorted(glob.glob('mas/lproj/*.lproj'))
 
 OPTIONS = {
     'argv_emulation': False,
     'iconfile': 'icon.icns',
     'plist': {
-        'CFBundleName': 'Nebula Note',
-        'CFBundleDisplayName': 'Nebula Note',
-        'CFBundleIdentifier': 'com.nebulanote.app',
-        'CFBundleVersion': '3.0.0',
-        'CFBundleShortVersionString': '3.0.0',
-        'LSMinimumSystemVersion': '10.15',
+        'CFBundleName': APP_NAME,
+        'CFBundleDisplayName': APP_NAME,
+        'CFBundleIdentifier': BUNDLE_ID,
+        'CFBundleVersion': BUILD_NUMBER,
+        'CFBundleShortVersionString': __version__,
+        'CFBundleDevelopmentRegion': 'en',
+        'CFBundleLocalizations': ['en', 'ko', 'ja', 'zh-Hans'],
+        'CFBundleAllowMixedLocalizations': True,
+        'LSApplicationCategoryType': 'public.app-category.productivity',
+        'LSMinimumSystemVersion': MIN_MACOS,
+        'NSHumanReadableCopyright': 'Copyright © 2026 Byoungho Kim. All rights reserved.',
+        'ITSAppUsesNonExemptEncryption': False,
         'NSHighResolutionCapable': True,
         'NSRequiresAquaSystemAppearance': False,  # 다크 모드 지원
         'CFBundleDocumentTypes': [
@@ -33,7 +58,7 @@ OPTIONS = {
                 'CFBundleTypeName': 'Markdown Document',
                 'CFBundleTypeRole': 'Editor',
                 'LSItemContentTypes': ['net.daringfireball.markdown'],
-                'LSHandlerRank': 'Owner',
+                'LSHandlerRank': 'Default',
                 'CFBundleTypeExtensions': ['md', 'markdown', 'mdown', 'mkd'],
             },
             {
@@ -43,7 +68,7 @@ OPTIONS = {
                 'LSHandlerRank': 'Alternate',
             },
         ],
-        'UTExportedTypeDeclarations': [
+        'UTImportedTypeDeclarations': [
             {
                 'UTTypeIdentifier': 'net.daringfireball.markdown',
                 'UTTypeDescription': 'Markdown Document',
@@ -55,35 +80,37 @@ OPTIONS = {
             },
         ],
     },
-    'packages': ['PyQt6', 'markdown', 'pygments'],
+    'packages': ['markdown', 'pygments'],
     'includes': [
         'PyQt6.QtCore',
-        'PyQt6.QtWidgets', 
+        'PyQt6.QtWidgets',
         'PyQt6.QtGui',
-        'PyQt6.QtWebEngineWidgets',
-        'PyQt6.QtWebChannel',
         'PyQt6.QtPrintSupport',
+        'PyQt6.sip',
+        'objc',
+        'Foundation',
+        'AppKit',
+        'WebKit',
         'markdown.extensions.tables',
         'markdown.extensions.fenced_code',
         'markdown.extensions.codehilite',
         'markdown.extensions.toc',
         'markdown.extensions.nl2br',
         'markdown.extensions.sane_lists',
-        'importlib.util',
-        'importlib',
         'html.entities',
         'html.parser',
-        'html',
     ],
-    'excludes': ['tkinter', 'test'],
-    'frameworks': LIBFFI_FRAMEWORKS,
-    'resources': ['icon.ico'],
+    # Qt WebEngine (Chromium) is rejected by the Mac App Store; macOS uses WKWebView instead.
+    'excludes': ['tkinter', 'test', 'unittest', 'PIL', 'PyQt6.QtWebEngineCore', 'PyQt6.QtWebEngineWidgets',
+                 'PyQt6.QtWebChannel', 'PyQt6.QtNetwork', 'PyQt6.QtBluetooth', 'PyQt6.QtMultimedia',
+                 'PyQt6.QtPositioning', 'PyQt6.QtSensors', 'PyQt6.QtQml', 'PyQt6.QtQuick'],
+    'resources': ['icon.ico'] + LPROJ_DIRS,
 }
 
 setup(
-    name='Nebula Note',
+    name=APP_NAME,
     app=APP,
-    data_files=DATA_FILES,
+    data_files=[('assets/vendor', VENDOR_FILES)],
     options={'py2app': OPTIONS},
     setup_requires=['py2app'],
 )

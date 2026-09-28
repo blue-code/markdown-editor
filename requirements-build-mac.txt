@@ -1,0 +1,5 @@
+# macOS packaging / App Store Connect tooling (not needed at runtime)
+py2app>=0.28
+PyJWT>=2.8
+cryptography>=42
+Pillow>=9.0.0

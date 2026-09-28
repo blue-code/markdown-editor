@@ -1,5 +1,6 @@
 PyQt6>=6.4.0
-PyQt6-WebEngine>=6.4.0
+# Windows/Linux preview engine. macOS uses the system WKWebView (Qt WebEngine is not allowed on the Mac App Store).
+PyQt6-WebEngine>=6.4.0; sys_platform != "darwin"
+pyobjc-framework-WebKit>=10.0; sys_platform == "darwin"
 markdown>=3.4.0
 Pygments>=2.14.0
-Pillow>=9.0.0

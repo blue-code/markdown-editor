@@ -1,0 +1,3 @@
+Nebula Note is a Markdown editor. No account or login is required.
+To try the main features: open the "Examples" (📚) or "Mermaid" (📊) tab in the sidebar and double-click an item to insert sample content; the live preview renders it on the right. Mermaid > Open Viewer shows diagrams full size with SVG/PNG export.
+The app uses network access only to display remote images referenced inside user documents.

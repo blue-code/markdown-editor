@@ -1,0 +1,1 @@
+markdown,editor,mermaid,diagram,notes,writing,latex,math,preview,readme,md,focus,outline,docs

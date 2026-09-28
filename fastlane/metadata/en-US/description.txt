@@ -1,0 +1,27 @@
+Nebula Note is a clean, focused Markdown editor for the Mac with a live preview that renders diagrams and math as you type.
+
+WRITE AND PREVIEW SIDE BY SIDE
+• Live preview with syntax-highlighted code blocks and one-click Copy buttons
+• Tables, task lists, table of contents, footnote-style links and images
+• LaTeX math rendered with MathJax ($E = mc^2$)
+
+MERMAID DIAGRAMS, BUILT IN
+• 19 diagram types: flowchart, sequence, class, state, ER, Gantt, pie, mind map, Git graph, user journey, timeline, quadrant, sankey, XY chart, block, C4, kanban and more
+• A dedicated diagram viewer with zoom, fit-to-window and full screen
+• Export any diagram as SVG, PNG or high-resolution PNG @2x
+
+STAY IN THE FLOW
+• Focus mode hides everything but your words
+• Document outline for jumping between headings
+• Snippets that expand with Tab, plus autocomplete for common Markdown
+• Word goals, reading time and detailed document statistics
+• Find & replace with regular expressions
+• One-click table formatting, line sorting and empty-line cleanup
+
+MADE FOR YOUR MAC
+• Dark mode and custom CSS for the preview
+• Export to standalone HTML or PDF
+• Works fully offline — Mermaid and MathJax are bundled in the app
+• Available in English, Korean, Japanese and Simplified Chinese
+
+Your documents never leave your Mac. No accounts, no tracking.

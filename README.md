@@ -1,8 +1,8 @@
-# Nebula Note v1.0
+# Nebula Note 3.1
 
-> ✨ Pure & Sexy Markdown Editor - Mermaid 19종 다이어그램 완벽 지원
+> ✨ Pure & Sexy Markdown Editor - Mermaid 19종 다이어그램 완벽 지원 · 한국어/English/日本語/简体中文
 
-[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)]()
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)]()
 [![PyQt6](https://img.shields.io/badge/PyQt6-6.4+-green.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)]()
 
@@ -44,6 +44,11 @@
 - **단어 목표** - 글쓰기 목표 설정 및 진행률
 - **백업** - 수동 백업 생성
 - **자동 저장** - 1분마다 자동 저장
+
+### 🌏 다국어
+- 한국어 · English · 日本語 · 简体中文 UI, 예제 템플릿, Mermaid 예제
+- 기본값은 macOS/Windows 시스템 언어, **보기 → 언어** 메뉴로 변경 (재실행 후 적용)
+- 번역 문자열: `i18n.py`, 예제 콘텐츠: `localized_content.py`
 
 ### 🛠️ 추가 기능
 - **다크/라이트 모드**
@@ -98,7 +103,7 @@ build_exe.bat
 # EXE 빌드 + 인스톨러 생성
 build_installer.bat
 
-# 결과: dist\NebulaNote-Setup.exe
+# 결과: dist\NebulaNote-<버전>-Setup.exe, dist\NebulaNote-<버전>-win64.zip
 ```
 
 ### macOS DMG 빌드
@@ -108,8 +113,24 @@ build_installer.bat
 chmod +x build_dmg.sh
 ./build_dmg.sh
 
-# 결과: dist/Nebula Note-3.0.0.dmg
+# 결과: dist/Nebula Note-<버전>.dmg
 ```
+
+### Mac App Store 빌드
+
+macOS 미리보기는 시스템 **WKWebView**(PyObjC)를 사용합니다. Qt WebEngine(Chromium)은 private API 사용과
+App Sandbox 충돌 때문에 Mac App Store에서 허용되지 않으므로 macOS 빌드에는 포함하지 않습니다(Windows는 Qt WebEngine 사용).
+
+```bash
+uv python install 3.12                 # macOS 11+ 대상 standalone Python (Homebrew Python은 최신 macOS 전용)
+./build_mas.sh --local-test            # 샌드박스 적용 ad-hoc 서명 앱 (로컬 실행 테스트)
+./build_mas.sh                         # 서명 + dist/NebulaNote-<버전>-<빌드>-mas.pkg
+ASC_KEY_ID=... ASC_ISSUER_ID=... ./build_mas.sh --upload   # 검증 + App Store Connect 업로드
+```
+
+- 프로비저닝 프로파일: `python mas/asc.py ensure-profile com.blueCode.NebulaNote mas/NebulaNote_MAS.provisionprofile`
+- 스토어 메타데이터/스크린샷(4개 언어): `fastlane/metadata`, `fastlane/screenshots`
+- 버전: `version.py` (`__version__`, 업로드마다 증가하는 `BUILD_NUMBER`)
 
 ## 🚀 사용법
 
@@ -182,11 +203,21 @@ flowchart TD
 
 ```
 markdown-editor/
-├── markdown_editor.py   # 메인 프로그램 (~1500줄)
-├── setup.py             # py2app 빌드 설정
-├── build_dmg.sh         # DMG 빌드 스크립트
-├── requirements.txt     # Python 의존성
-└── README.md           # 이 파일
+├── markdown_editor.py     # 메인 창, 에디터, 다이얼로그
+├── i18n.py                # UI 번역 (ko/en/ja/zh)
+├── localized_content.py   # 언어별 Mermaid 예제, 템플릿, 스니펫
+├── web_view.py            # 미리보기 웹뷰 (macOS: WKWebView / 기타: Qt WebEngine)
+├── preview_html.py        # 미리보기·Mermaid 뷰어 HTML 생성
+├── file_io.py             # 샌드박스 대응 사용자 파일 입출력 (QFile)
+├── markdown_tools.py      # 표 정렬 등 텍스트 변환
+├── mermaid_utils.py       # Mermaid 블록 추출
+├── version.py             # 앱 버전 (빌드 스크립트 공용)
+├── assets/vendor/         # 번들 Mermaid / MathJax (오프라인 동작)
+├── mas/                   # App Store 엔타이틀먼트, 번들 정리, ASC API 도구
+├── fastlane/              # 스토어 메타데이터·스크린샷
+├── setup.py               # py2app 빌드 설정
+├── build_dmg.sh / build_mas.sh / build_exe.bat
+└── tests/                 # unittest
 ```
 
 ## 🔧 설정 파일

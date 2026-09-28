@@ -5,3 +5,7 @@ build/
 *.swp
 *.spec
 .DS_Store
+*.provisionprofile
+build_mas.log
+*.pkg
+venv-mas/

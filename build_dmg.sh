@@ -6,8 +6,9 @@
 
 set -e
 
-APP_NAME="Nebula Note"
-VERSION="3.0.0"
+cd "$(dirname "$0")"
+APP_NAME=$(python3 -c "import version; print(version.APP_NAME)")
+VERSION=$(python3 -c "import version; print(version.__version__)")
 DMG_NAME="${APP_NAME}-${VERSION}"
 
 echo ""
@@ -33,7 +34,7 @@ source venv/bin/activate
 echo "📦 의존성 설치 중..."
 pip install --upgrade pip wheel setuptools
 pip install -r requirements.txt
-pip install py2app
+pip install -r requirements-build-mac.txt
 
 # ===== 4. 아이콘 생성 =====
 if [ ! -f "icon.icns" ]; then
@@ -110,6 +111,7 @@ fi
 # ===== 5. 앱 빌드 =====
 echo "🔨 앱 빌드 중..."
 python setup.py py2app
+python mas/prune_bundle.py "dist/${APP_NAME}.app"
 
 
 # ===== 5-1. libffi 런타임 보강 (py2app Launch error 방지) =====

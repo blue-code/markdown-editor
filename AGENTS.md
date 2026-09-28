@@ -2,10 +2,14 @@
 
 ## Project Structure & Module Organization
 This is a Python desktop app built with PyQt6.
-- `markdown_editor.py`: main application window, editor, preview, dialogs, and UI actions.
-- `mermaid_utils.py`: Mermaid block extraction helpers used by preview/viewer logic.
-- `tests/test_mermaid_blocks.py`: unit tests for Mermaid parsing behavior.
-- Build and packaging scripts: `build_exe.bat`, `build_installer.bat`, `build_dmg.sh`, `setup.py`, `installer.nsi`.
+- `markdown_editor.py`: main application window, editor, dialogs, and UI actions.
+- `i18n.py` / `localized_content.py`: UI strings and sample content for ko/en/ja/zh. Every user-visible string goes through `tr()`; add a key to all four languages (tests enforce parity).
+- `web_view.py`: preview web view. macOS uses WKWebView (Qt WebEngine is not allowed on the Mac App Store); other platforms use Qt WebEngine.
+- `preview_html.py`: preview / Mermaid viewer HTML shells; `file_io.py`: user-file I/O through QFile (required inside the App Sandbox).
+- `mermaid_utils.py`, `markdown_tools.py`: pure helpers.
+- `tests/`: unittest suites.
+- Build and packaging scripts: `build_exe.bat`, `build_installer.bat`, `build_dmg.sh`, `build_mas.sh` (Mac App Store), `setup.py`, `installer.nsi`, `mas/`.
+- Version lives in `version.py` only; build scripts read it.
 - Assets: `icon.ico`, `icon_source.png`, `splash.png`.
 
 Keep new code in focused modules. If a feature is reusable, move logic out of `markdown_editor.py` into a helper module and add tests.
